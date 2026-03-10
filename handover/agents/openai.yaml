@@ -1,0 +1,4 @@
+interface:
+  display_name: "Handover"
+  short_description: "Create session handover context and summaries"
+  default_prompt: "Create a .leftover handover package for the current session."

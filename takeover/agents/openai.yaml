@@ -1,0 +1,4 @@
+interface:
+  display_name: "Takeover"
+  short_description: "Resume work from latest .leftover handover"
+  default_prompt: "Resume the previous session by reading only the highest-numbered folder in .leftover, then summarize context and surface next steps."
