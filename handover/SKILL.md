@@ -1,25 +1,27 @@
 ---
 name: handover
-description: Create a .leftover handover package with numbered folders and context files that summarize the current session. Use when handing work to another AI agent or pausing work and needing a resumable state.
+description: Create a .leftover handover package with numbered folders and context files that summarize the current session. NEVER use this skill unless explicitly asked for a handover or to save state for another agent.
 ---
 
 # Handover
 
 ## Overview
-Create a `.leftover/<n>/` folder in the project root and populate it with concise context files so another agent can resume work without re-discovery.
+Create a `.leftover/<branch>/<n>/` folder in the project root and populate it with concise context files so another agent can resume work without re-discovery.
 
 ## Workflow
-1. Identify the handover root (default: repo root / current working directory). If the user specifies a different root, use it.
-2. Ensure `.leftover/` exists at the root.
-3. Choose the next numeric folder name: use `1` if empty, otherwise `max(existing numeric folder) + 1`. Ignore non-numeric entries.
-4. Create the handover files (use `scripts/init_handover.py` when possible):
+1. **Wait for explicit request:** Only use this skill if the user specifically asks for a "handover", "checkpoint", or to "save the current state".
+2. Identify the handover root (default: repo root / current working directory). If the user specifies a different root, use it.
+3. Identify the current git branch.
+4. Ensure `.leftover/<branch>/` exists at the root.
+5. Choose the next numeric folder name: use `1` if empty, otherwise `max(existing numeric folder) + 1`. Ignore non-numeric entries.
+6. Create the handover files (use `scripts/init_handover.py` when possible):
    - `summary.md`
    - `work_done.md`
    - `decisions.md`
    - `next_steps.md`
    - `commands.md`
    - `files_touched.md`
-5. Fill each file with concrete, current information. Use exact dates and file paths.
+7. Fill each file with concrete, current information. Use exact dates and file paths.
 
 ## File Content Guidance
 - `summary.md`: goal, current status, key outcomes.

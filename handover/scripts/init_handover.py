@@ -6,6 +6,7 @@ Create a numbered handover folder under .leftover with template context files.
 from __future__ import annotations
 
 import argparse
+import subprocess
 from pathlib import Path
 
 TEMPLATES = {
@@ -18,9 +19,22 @@ TEMPLATES = {
 }
 
 
-def next_index(leftover_dir: Path) -> int:
+def get_git_branch() -> str:
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+    except Exception:
+        return "default"
+
+
+def next_index(branch_dir: Path) -> int:
+    if not branch_dir.exists():
+        return 1
     numeric = []
-    for child in leftover_dir.iterdir():
+    for child in branch_dir.iterdir():
         if child.is_dir() and child.name.isdigit():
             numeric.append(int(child.name))
     return max(numeric, default=0) + 1
@@ -28,7 +42,7 @@ def next_index(leftover_dir: Path) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Initialize a .leftover/<n>/ handover package with template files."
+        description="Initialize a .leftover/<branch>/<n>/ handover package with template files."
     )
     parser.add_argument(
         "--root",
@@ -44,11 +58,12 @@ def main() -> int:
     args = parser.parse_args()
 
     root = Path(args.root).resolve()
-    leftover_dir = root / ".leftover"
-    leftover_dir.mkdir(parents=True, exist_ok=True)
+    branch = get_git_branch()
+    branch_dir = root / ".leftover" / branch
+    branch_dir.mkdir(parents=True, exist_ok=True)
 
-    index = args.index if args.index is not None else next_index(leftover_dir)
-    target_dir = leftover_dir / str(index)
+    index = args.index if args.index is not None else next_index(branch_dir)
+    target_dir = branch_dir / str(index)
 
     if target_dir.exists():
         print(f"[ERROR] Target already exists: {target_dir}")
