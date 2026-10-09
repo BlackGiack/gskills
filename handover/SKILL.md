@@ -13,15 +13,17 @@ Create a `.leftover/<branch>/<n>/` folder in the project root and populate it wi
 2. Identify the handover root (default: repo root / current working directory). If the user specifies a different root, use it.
 3. Identify the current git branch.
 4. Ensure `.leftover/<branch>/` exists at the root.
-5. Choose the next numeric folder name: use `1` if empty, otherwise `max(existing numeric folder) + 1`. Ignore non-numeric entries.
-6. Create the handover files (use `scripts/init_handover.py` when possible):
+5. **Preflight:** list the contents of `.leftover/<branch>/` and determine whether any numeric folders exist.
+6. Choose the next numeric folder name: use `1` only if no numeric folders exist; otherwise use `max(existing numeric folder) + 1`. Ignore non-numeric entries.
+7. **Safety:** If the chosen folder already exists, stop and re-evaluate (do not overwrite).
+8. Create the handover files (use `scripts/init_handover.py` when possible):
    - `summary.md`
    - `work_done.md`
    - `decisions.md`
    - `next_steps.md`
    - `commands.md`
    - `files_touched.md`
-7. Fill each file with concrete, current information. Use exact dates and file paths.
+9. Fill each file with concrete, current information. Use exact dates and file paths.
 
 ## File Content Guidance
 - `summary.md`: goal, current status, key outcomes.

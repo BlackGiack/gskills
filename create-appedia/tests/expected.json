@@ -1,0 +1,142 @@
+{
+  "go": {
+    "language": "go",
+    "packages": [
+      "api",
+      "cmd~orders",
+      "internal~orders",
+      "store"
+    ],
+    "types": 9,
+    "funcs": 4,
+    "methods": 8,
+    "relations": [
+      "api.Server has internal~orders.Service",
+      "internal~orders.Order has internal~orders.Item",
+      "internal~orders.Order has internal~orders.Status",
+      "internal~orders.Service has internal~orders.Clock",
+      "internal~orders.Service has internal~orders.Repository",
+      "internal~orders.SystemClock implements internal~orders.Clock",
+      "store.Memory has internal~orders.Order",
+      "store.Memory implements internal~orders.Repository"
+    ],
+    "imports": [
+      "api -> internal~orders",
+      "cmd~orders -> api",
+      "cmd~orders -> internal~orders",
+      "cmd~orders -> store",
+      "store -> internal~orders"
+    ],
+    "dataflow": []
+  },
+  "python": {
+    "language": "python",
+    "packages": [
+      "api",
+      "cli",
+      "export",
+      "orders",
+      "public",
+      "reminders"
+    ],
+    "types": 11,
+    "funcs": 3,
+    "methods": 14,
+    "relations": [
+      "export.Job has export.Client",
+      "orders.MemoryRepository has orders.Order",
+      "orders.MemoryRepository implements orders.Repository",
+      "orders.Order has orders.Item",
+      "orders.Order has orders.Status",
+      "orders.OrderService has orders.Repository",
+      "reminders.Job has reminders.Client"
+    ],
+    "imports": [
+      "api -> orders",
+      "cli -> public",
+      "public -> orders"
+    ],
+    "dataflow": []
+  },
+  "ts": {
+    "language": "typescript",
+    "packages": [
+      "api",
+      "components",
+      "hooks",
+      "src"
+    ],
+    "types": 9,
+    "funcs": 1,
+    "methods": 3,
+    "relations": [
+      "components.Props has src.Item",
+      "components.Props~OrderList has src.Order",
+      "src.App renders components.OrderForm",
+      "src.App renders components.OrderList",
+      "src.Order has src.Item",
+      "src.Order has src.Status"
+    ],
+    "imports": [
+      "api -> src",
+      "components -> src",
+      "hooks -> api",
+      "hooks -> src",
+      "src -> components",
+      "src -> hooks"
+    ],
+    "dataflow": []
+  },
+  "terraform": {
+    "language": "hcl",
+    "packages": [
+      "bigquery",
+      "cloud_run",
+      "configuration",
+      "functions",
+      "iam",
+      "logging",
+      "pubsub",
+      "scheduler",
+      "storage"
+    ],
+    "types": 17,
+    "funcs": 0,
+    "methods": 0,
+    "relations": [
+      "cloud_run.orders_api uses iam.orders_api",
+      "configuration.api_url uses cloud_run.orders_api",
+      "functions.export_worker uses iam.orders_api",
+      "functions.export_worker uses pubsub.export_requested",
+      "iam.api_logs uses iam.orders_api",
+      "logging.audit uses bigquery.audit",
+      "pubsub.api_publisher uses iam.orders_api",
+      "pubsub.api_publisher uses pubsub.orders_placed",
+      "pubsub.orders_to_api uses cloud_run.orders_api",
+      "pubsub.orders_to_api uses iam.orders_api",
+      "pubsub.orders_to_api uses pubsub.orders_placed",
+      "scheduler.nightly_export uses pubsub.export_requested",
+      "storage.exports_ready uses pubsub.export_requested",
+      "storage.exports_ready uses storage.exports"
+    ],
+    "imports": [
+      "cloud_run -> iam",
+      "configuration -> cloud_run",
+      "functions -> iam",
+      "functions -> pubsub",
+      "logging -> bigquery",
+      "pubsub -> cloud_run",
+      "pubsub -> iam",
+      "scheduler -> pubsub",
+      "storage -> pubsub"
+    ],
+    "dataflow": [
+      "logging.audit -> bigquery.audit",
+      "pubsub.export_requested -> functions.export_worker",
+      "pubsub.orders_placed -> pubsub.orders_to_api",
+      "pubsub.orders_to_api -> cloud_run.orders_api",
+      "scheduler.nightly_export -> pubsub.export_requested",
+      "storage.exports -> pubsub.export_requested"
+    ]
+  }
+}

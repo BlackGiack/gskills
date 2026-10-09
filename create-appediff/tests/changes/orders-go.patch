@@ -1,0 +1,39 @@
+diff --git a/internal/orders/order.go b/internal/orders/order.go
+index 888b230..fb36c46 100644
+--- a/internal/orders/order.go
++++ b/internal/orders/order.go
+@@ -20,6 +20,7 @@ type Item struct {
+ 
+ // Order is a customer's request for items.
+ type Order struct {
++	Customer string
+ 	ID       string
+ 	Items    []Item
+ 	Status   Status
+diff --git a/internal/orders/service.go b/internal/orders/service.go
+index 9b5b775..ebaa91f 100644
+--- a/internal/orders/service.go
++++ b/internal/orders/service.go
+@@ -22,7 +22,7 @@ func NewService(repo Repository, clock Clock) *Service {
+ 
+ // Place validates an order, stamps it and saves it.
+ func (s *Service) Place(o Order) (Order, error) {
+-	if len(o.Items) == 0 {
++	if len(o.Items) == 0 || o.Customer == "" {
+ 		return Order{}, ErrEmptyOrder
+ 	}
+ 	s.seq++
+@@ -39,3 +39,13 @@ func (s *Service) Place(o Order) (Order, error) {
+ func (s *Service) Get(id string) (Order, error) {
+ 	return s.repo.Get(id)
+ }
++
++// Cancel marks an order as cancelled.
++func (s *Service) Cancel(id string) (Order, error) {
++	o, err := s.repo.Get(id)
++	if err != nil {
++		return Order{}, err
++	}
++	o.Status = "cancelled"
++	return o, s.repo.Save(o)
++}

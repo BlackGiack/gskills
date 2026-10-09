@@ -1,0 +1,9 @@
+{
+  "name": "appedia-extract-ts",
+  "private": true,
+  "type": "module",
+  "description": "TypeScript/React extractor for the create-appedia skill. Run `npm install` here once if the target project has no typescript package.",
+  "dependencies": {
+    "typescript": "^5.6.0"
+  }
+}

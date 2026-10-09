@@ -1,0 +1,28 @@
+{
+  "orders-py": {
+    "code": {
+      "orders": "changed", "orders.Status": "changed", "orders.OrderService": "changed",
+      "orders.OrderService.place": "changed", "orders.OrderService.cancel": "added", "orders.OrderService.get": "",
+      "orders.Order": "", "api": "changed", "api.cancel_order": "added", "api.get_order": "removed", "api.create_order": "",
+      "events": "added", "events.EventBus": "added", "events.EventBus.publish": "added",
+      "notify": "moved", "notify.Job": "moved", "reminders": "removed", "reminders.Job": "moved", "export": "", "export.Job": ""
+    },
+    "movedFrom": { "notify": "reminders", "notify.Job": "reminders" },
+    "movedTo": { "reminders.Job": "notify" },
+    "imports": { "orders -> events": "added" },
+    "relations": { "orders.OrderService has events.EventBus": "added", "notify.Job has notify.Client": "added", "reminders.Job has reminders.Client": "removed" },
+    "infra": {
+      "pubsub": "changed", "pubsub.orders_cancelled": "added", "pubsub.orders_placed": "",
+      "cloud_run": "changed", "cloud_run.orders_api": "changed",
+      "bigquery": "removed", "bigquery.audit": "removed", "logging": "removed", "logging.audit": "removed"
+    },
+    "files": ["infra/main.tf", "jobs/notify/client.py", "jobs/notify/main.py", "orders/api/routes.py", "orders/events/__init__.py", "orders/events/bus.py", "orders/models.py", "orders/service.py"]
+  },
+  "orders-go": {
+    "code": {
+      "internal~orders": "changed", "internal~orders.Service.Place": "changed", "internal~orders.Service.Cancel": "added",
+      "internal~orders.Service.Get": "", "internal~orders.Order": "changed", "api": "", "store": ""
+    },
+    "files": ["internal/orders/order.go", "internal/orders/service.go"]
+  }
+}

@@ -1,0 +1,47 @@
+<title>{{TITLE}}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="appedia.css">
+
+<header class="top">
+  <button class="brand" id="brand" type="button">{{APP}} <span>appediff</span></button>
+  <nav class="modes" aria-label="Modes">
+    <button type="button" data-mode="review">Review</button>
+    <button type="button" data-mode="explore">Explore</button>
+    <button type="button" data-mode="infra" hidden>Infrastructure</button>
+    <button type="button" data-mode="flows">Flows</button>
+    <button type="button" data-mode="files">Files</button>
+  </nav>
+  <div class="searchbox">
+    <input id="search" type="search" placeholder="Search types, methods, flows, rules…" aria-label="Search" autocomplete="off">
+    <kbd>/</kbd>
+    <ul class="results" id="results" hidden></ul>
+  </div>
+  <button class="theme-btn" id="themeBtn" type="button" aria-label="Switch colour theme">Theme: system</button>
+</header>
+
+<main>
+  <section class="mode" id="mode-explore" aria-label="Explore">
+    <nav class="crumbs" id="crumbs" aria-label="Breadcrumb"></nav>
+    <div class="explore">
+      <div class="stage" id="stage"></div>
+      <aside class="panel" id="panel" aria-label="Details"></aside>
+    </div>
+  </section>
+  <section class="mode" id="mode-flows" aria-label="Flows">
+    <div class="flows">
+      <nav class="catalog" id="catalog" aria-label="Flow catalogue"></nav>
+      <div class="flowmain" id="flowmain"></div>
+    </div>
+  </section>
+  <section class="mode" id="mode-review" aria-label="Review"></section>
+  <section class="mode" id="mode-files" aria-label="Files"></section>
+  <section class="mode" id="mode-rules" aria-label="Rules"></section>
+  <section class="mode" id="mode-tasks" aria-label="Tasks"></section>
+  <section class="mode" id="mode-ref" aria-label="Reference"></section>
+</main>
+
+<script src="data/model.js"></script>
+<script src="data/content.js"></script>
+<script src="appedia.js"></script>

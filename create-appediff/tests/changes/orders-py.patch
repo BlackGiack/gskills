@@ -1,0 +1,147 @@
+diff --git a/infra/main.tf b/infra/main.tf
+index d6d2990..c507d1f 100644
+--- a/infra/main.tf
++++ b/infra/main.tf
+@@ -31,6 +31,10 @@ resource "google_cloud_run_v2_service" "orders_api" {
+     service_account = google_service_account.orders_api.email
+     containers {
+       image = var.image
++      env {
++        name  = "CANCEL_TOPIC"
++        value = google_pubsub_topic.orders_cancelled.name
++      }
+     }
+   }
+ }
+@@ -39,6 +43,10 @@ resource "google_pubsub_topic" "orders_placed" {
+   name = "orders-placed"
+ }
+ 
++resource "google_pubsub_topic" "orders_cancelled" {
++  name = "orders-cancelled"
++}
++
+ resource "google_pubsub_topic" "export_requested" {
+   name = "export-requested"
+ }
+@@ -94,16 +102,6 @@ resource "google_cloud_scheduler_job" "nightly_export" {
+   }
+ }
+ 
+-resource "google_bigquery_dataset" "audit" {
+-  dataset_id = "orders_audit"
+-}
+-
+-resource "google_logging_project_sink" "audit" {
+-  name        = "orders-audit"
+-  destination = "bigquery.googleapis.com/projects/${var.project}/datasets/${google_bigquery_dataset.audit.dataset_id}"
+-  filter      = "resource.type=\"cloud_run_revision\""
+-}
+-
+ output "api_url" {
+   value = google_cloud_run_v2_service.orders_api.uri
+ }
+diff --git a/jobs/reminders/client.py b/jobs/notify/client.py
+similarity index 100%
+rename from jobs/reminders/client.py
+rename to jobs/notify/client.py
+diff --git a/jobs/reminders/main.py b/jobs/notify/main.py
+similarity index 100%
+rename from jobs/reminders/main.py
+rename to jobs/notify/main.py
+diff --git a/orders/api/routes.py b/orders/api/routes.py
+index f1b2493..bd76ea7 100644
+--- a/orders/api/routes.py
++++ b/orders/api/routes.py
+@@ -10,7 +10,7 @@ def create_order(service: OrderService, payload: dict) -> dict:
+     return {"id": placed.id, "status": placed.status.value}
+ 
+ 
+-def get_order(service: OrderService, order_id: str) -> dict:
+-    """GET /orders/<id>."""
+-    order = service.get(order_id)
+-    return {"id": order.id, "status": order.status.value, "items": len(order.items)}
++def cancel_order(service: OrderService, order_id: str) -> dict:
++    """POST /orders/<id>/cancel."""
++    order = service.cancel(order_id)
++    return {"id": order.id, "status": order.status.value}
+diff --git a/orders/events/__init__.py b/orders/events/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/orders/events/bus.py b/orders/events/bus.py
+new file mode 100644
+index 0000000..a7c88b6
+--- /dev/null
++++ b/orders/events/bus.py
+@@ -0,0 +1,15 @@
++"""Events other parts of the system react to."""
++
++
++class EventBus:
++    """Delivers order events to subscribers, in order."""
++
++    def __init__(self) -> None:
++        self.subscribers = []
++
++    def subscribe(self, handler) -> None:
++        self.subscribers.append(handler)
++
++    def publish(self, name: str, order_id: str) -> None:
++        for handler in self.subscribers:
++            handler(name, order_id)
+diff --git a/orders/models.py b/orders/models.py
+index 48c865c..158fe21 100644
+--- a/orders/models.py
++++ b/orders/models.py
+@@ -8,6 +8,7 @@ class Status(str, Enum):
+     """Where an order is in its life."""
+     PLACED = "placed"
+     SHIPPED = "shipped"
++    CANCELLED = "cancelled"
+ 
+ 
+ @dataclass
+diff --git a/orders/service.py b/orders/service.py
+index c83b8fc..7de8750 100644
+--- a/orders/service.py
++++ b/orders/service.py
+@@ -1,6 +1,7 @@
+ """Placing and reading orders."""
+ from datetime import datetime
+ 
++from .events.bus import EventBus
+ from .models import Order, Status
+ from .repository import Repository
+ 
+@@ -12,19 +13,29 @@ class EmptyOrderError(ValueError):
+ class OrderService:
+     """Places and reads orders."""
+ 
+-    def __init__(self, repo: Repository) -> None:
++    def __init__(self, repo: Repository, events: EventBus) -> None:
+         self.repo = repo
++        self.events = events
+         self.seq = 0
+ 
+     def place(self, order: Order) -> Order:
+         """Validate an order, stamp it and save it."""
+-        if not order.items:
++        if not order.items or any(i.quantity <= 0 for i in order.items):
+             raise EmptyOrderError("order has no items")
+         self.seq += 1
+         order.id = f"o-{self.seq}"
+         order.status = Status.PLACED
+         order.placed_at = datetime.now()
+         self.repo.save(order)
++        self.events.publish("placed", order.id)
++        return order
++
++    def cancel(self, order_id: str) -> Order:
++        """Cancel an order that has not shipped."""
++        order = self.repo.get(order_id)
++        order.status = Status.CANCELLED
++        self.repo.save(order)
++        self.events.publish("cancelled", order.id)
+         return order
+ 
+     def get(self, order_id: str) -> Order:
