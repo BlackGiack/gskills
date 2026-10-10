@@ -3,6 +3,20 @@
 Newest first. Note anything that changes the content format or the commands
 people run, and how to migrate (see CONTRIBUTING.md, constraint 12).
 
+## 0.4.0 — 2026-10-10
+
+* Added `appedia.mjs` to prepare and review model/content impacts, rebuild an
+  existing appedia, verify it and accept a provenance baseline only after all
+  report items are resolved and build/smoke checks pass. Renderer-only refresh
+  is a separate action.
+* Added optional `sources.refs` and `sources.files` to flows, rules, tasks and
+  package descriptions. Builds validate references and generate
+  `data/content-index.json`.
+* Added versioned baseline manifests, raw models, file hashes, toolchain
+  fingerprints and explicit first-baseline warnings for legacy appedias.
+* Added shared impact helpers, fixture coverage and a parity check with the
+  standalone copy bundled in create-appediff.
+
 ## 0.3.0 — 2026-10-07
 
 The Infrastructure tab, designed on the same project as 0.2.0 (Terraform for a

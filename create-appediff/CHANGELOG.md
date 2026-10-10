@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.0 — 2026-10-10
+
+* Appedia seeding accepts `--appedia <dir>`, selects flows using shared direct,
+  participant, supporting-source and changed-file indexes, and reports whether
+  the baseline matches the change base/head or has unknown provenance.
+* Added the standalone bundled impact helper and regression tests. The review
+  coverage warning now separates participant-only mentions from direct refs.
+* Appediff validates optional supporting source references and paths.
+
 ## 0.1.0
 
 First version, forked from create-appedia 0.3.0.

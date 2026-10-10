@@ -87,6 +87,14 @@ one per external participant you want on the map (`ext: true`).
 }
 ```
 
+Any flow, rule, task or package may include optional supporting sources:
+`sources: { refs: ["pkg.Helper"], files: ["config/settings.yaml"] }`.
+Use these for implementation helpers that are not drawn as flow steps and for
+configuration, docs or other files that explain the behavior. References are
+validated like other appedia links; file paths are relative to the repository
+root. Build output includes a generated `data/content-index.json` used by the
+refresh and appediff workflows. You do not edit that index.
+
 Packages that only re-export others are folded away by the build (it says
 which); don't describe them, describe the packages they pointed to. Set
 `keep: true` on one you want on the map anyway.

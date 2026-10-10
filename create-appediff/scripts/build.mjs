@@ -82,7 +82,20 @@ function resolve(ref) {
   return null;
 }
 function check(ref, where) { if (!resolve(ref)) errors.push(`${where}: unknown reference ${ref}`); }
+function checkSources(value, where, fallback = "code") {
+  if (!value || typeof value !== "object" || !value.sources) return;
+  const src = value.sources;
+  if (!Array.isArray(src.refs || []) || !Array.isArray(src.files || [])) { errors.push(`${where}.sources needs refs and files arrays`); return; }
+  for (const raw of src.refs || []) {
+    if (typeof raw !== "string") { errors.push(`${where}.sources.refs entries must be strings`); continue; }
+    const infra = raw.startsWith("infra:"), ref = infra ? raw.slice(6) : raw;
+    const ok = infra || fallback === "infra" ? infraModel && resolveIn(infraModel, ref) : resolve(ref);
+    if (!ok) errors.push(`${where}.sources: unknown ${infra || fallback === "infra" ? "infrastructure " : ""}reference ${ref}`);
+  }
+  for (const f of src.files || []) if (typeof f !== "string" || !f || f.startsWith("/") || f.split(/[\\/]/).includes("..")) errors.push(`${where}.sources.files entries must be repository-relative paths without ..`);
+}
 for (const [id, f] of Object.entries(content.flows || {})) {
+  checkSources(f, `flow ${id}`);
   const keys = new Set();
   for (const [k, ref] of f.participants) { keys.add(k); if (!EXTERNAL.has(ref)) check(ref, `flow ${id} participant ${k}`); }
   f.steps.forEach((s, i) => {
@@ -94,10 +107,11 @@ for (const [id, f] of Object.entries(content.flows || {})) {
   });
 }
 for (const g of content.flowGroups || []) for (const id of g.flows) if (!(content.flows || {})[id]) errors.push(`flow group ${g.name}: no flow ${id}`);
-(content.rules || []).forEach(r => { if (r.ref) check(r.ref, `rule ${r.n}`); (r.flows || []).forEach(f => { if (!(content.flows || {})[f]) errors.push(`rule ${r.n}: no flow ${f}`); }); });
-(content.tasks || []).forEach(t => { (t.refs || []).forEach(r => check(r, `task "${t.q}"`)); if (t.flow && !(content.flows || {})[t.flow]) errors.push(`task "${t.q}": no flow ${t.flow}`); });
+(content.rules || []).forEach(r => { checkSources(r, `rule ${r.n}`); if (r.ref) check(r.ref, `rule ${r.n}`); (r.flows || []).forEach(f => { if (!(content.flows || {})[f]) errors.push(`rule ${r.n}: no flow ${f}`); }); });
+(content.tasks || []).forEach(t => { checkSources(t, `task "${t.q}"`); (t.refs || []).forEach(r => check(r, `task "${t.q}"`)); if (t.flow && !(content.flows || {})[t.flow]) errors.push(`task "${t.q}": no flow ${t.flow}`); });
 (content.concepts || []).forEach(c => { if (c[2]) check(c[2], `concept ${c[0]}`); });
 for (const [id, p] of Object.entries(content.packages || {})) {
+  checkSources(p, `package ${id}`);
   if (p.ext) continue;
   if (folded.includes(id)) continue;   // reported below
   if (!model.packages[id]) { errors.push(`package ${id} not in model`); continue; }
@@ -140,6 +154,7 @@ if (infraModel) {
   for (const id of Object.keys(infraModel.packages)) if (!/^[A-Za-z0-9_~-]+$/.test(id)) errors.push(`infra area id "${id}" may only use letters, digits, _ ~ - (it is used in URLs)`);
   const ip = infraContent.packages || {};
   for (const [id, p] of Object.entries(ip)) {
+    checkSources(p, `infra package ${id}`, "infra");
     if (p.ext) continue;
     if (foldedInfra.includes(id)) { warnings.push(`infra area ${id} declares nothing and was folded away`); continue; }
     if (!infraModel.packages[id]) { errors.push(`infra.packages.${id} is not an area of the infrastructure model`); continue; }
@@ -180,14 +195,22 @@ if (diffData) {
   for (const id of Object.keys(model.packages)) { const p = (content.packages || {})[id]; if (!p || !p.role) errors.push(`package ${id} needs label, sub and role in content.packages`); }
   // changed code that neither the review nor a flow mentions: maybe fine, maybe a gap in the story
   const named = new Set([...JSON.stringify(R || {}).matchAll(/\[\[([^\]|]+)/g)].map(m => m[1]));
-  for (const f of Object.values(content.flows || {})) { f.participants.forEach(p => named.add(p[1])); f.steps.forEach(s => s[5] && named.add(s[5])); }
-  const silent = [];
+  const participants = new Set(), supporting = new Set();
+  for (const f of Object.values(content.flows || {})) { f.participants.forEach(p => participants.add(p[1])); f.steps.forEach(s => s[5] && named.add(s[5])); }
+  for (const section of [content.flows || {}, content.packages || {}, content.rules || [], content.tasks || []]) {
+    const vals = Array.isArray(section) ? section : Object.values(section);
+    for (const v of vals) for (const ref of v.sources?.refs || []) supporting.add(ref);
+  }
+  const silent = [], participantOnly = [];
   for (const [pid, p] of Object.entries(model.packages)) for (const sec of ["funcs", "methods"]) for (const [k, x] of Object.entries(p[sec])) {
     if (!["added", "removed", "changed"].includes(x.ch)) continue;
     const ref = pid + "." + k;
-    if (!named.has(ref) && !named.has(pid + "." + (x.recv || ""))) silent.push(`${ref} (${x.ch})`);
+    if (named.has(ref) || supporting.has(ref)) continue;
+    if (x.recv && participants.has(pid + "." + x.recv)) participantOnly.push(`${ref} (${x.ch}; participant only)`);
+    else silent.push(`${ref} (${x.ch})`);
   }
   if (silent.length) warnings.push(`${silent.length} changed function(s) or method(s) appear in no flow and no review link: ${silent.slice(0, 12).join(", ")}${silent.length > 12 ? ", …" : ""}`);
+  if (participantOnly.length) warnings.push(`${participantOnly.length} changed function(s) or method(s) appear only through a flow participant, not a direct step or source reference: ${participantOnly.slice(0, 12).join(", ")}${participantOnly.length > 12 ? ", …" : ""}`);
 }
 if (warnings.length) console.warn("warning: " + warnings.join("\nwarning: "));
 if (errors.length) { console.error(errors.join("\n")); process.exit(1); }

@@ -17,10 +17,16 @@ without create-appedia installed. What is shared and what is new:
 | `assets/shell.html` | Review and Files tabs instead of Rules, Tasks and Reference. |
 | `scripts/smoke.mjs`, `screenshot.mjs` | create-appedia, plus the Review/Files routes and checks, flow views and explanations. |
 | `scripts/appediff.mjs`, `merge.mjs`, `files.mjs`, `selftest.mjs` | New. |
+| `scripts/impact.mjs` | Byte-identical bundled copy from create-appedia: source indexing, structural comparison and input fingerprints. It must remain local so this skill works when installed alone. |
 
 When create-appedia changes its renderer or build, port the change here and run
 both self-tests. Search for `DIFF` in `appedia.js` to find every diff-layer
 branch.
+
+When changing shared impact logic, edit create-appedia's `scripts/impact.mjs`,
+copy it here and in `tests/impact.mjs`, then run the appedia bundle check and
+both skill self-tests. The appedia self-test skips sibling parity when used as
+a standalone installation; the combined repository checks it strictly.
 
 ## How the pieces fit
 

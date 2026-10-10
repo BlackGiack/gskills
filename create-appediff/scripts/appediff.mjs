@@ -3,7 +3,7 @@
 //   node appediff.mjs --repo <repo> --lang go|python|ts [--base <rev>] [--head <rev>|WORKTREE]
 //                     [--out <repo>/tmp/appediff] [--infra <terraform dir in the repo>]
 //                     [--src <dir>] [--exclude a,b] [--python "<command>"]
-//                     [--no-appedia] [--rebuild]
+//                     [--appedia <dir>] [--no-appedia] [--rebuild]
 //
 // 1. Checks out base and head (git archive; WORKTREE copies the working tree, untracked files
 //    included) into <out>/.work, runs the language's extractor (and the Terraform one with
@@ -18,21 +18,26 @@
 // --base defaults to the merge-base of HEAD with the default branch; --head to HEAD.
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync, copyFileSync, readdirSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
+import { inventory, makeIndex } from "./impact.mjs";
 
 const args = Object.fromEntries(process.argv.slice(2).reduce((acc, a, i, all) => (a.startsWith("--") ? [...acc, [a.slice(2), all[i + 1] && !all[i + 1].startsWith("--") ? all[i + 1] : true]] : acc), []));
 const skill = join(dirname(fileURLToPath(import.meta.url)), "..");
-const usage = "usage: node appediff.mjs --repo <repo> --lang go|python|ts [--base <rev>] [--head <rev>|WORKTREE] [--out <dir>] [--infra <dir>] [--src <dir>] [--exclude a,b] [--python \"<command>\"] [--no-appedia] [--rebuild]";
+const usage = "usage: node appediff.mjs --repo <repo> --lang go|python|ts [--base <rev>] [--head <rev>|WORKTREE] [--out <dir>] [--infra <dir>] [--src <dir>] [--exclude a,b] [--python \"<command>\"] [--appedia <dir>] [--no-appedia] [--rebuild]";
 if (!args.repo || !["go", "python", "ts"].includes(args.lang)) { console.error(usage); process.exit(2); }
 const repo = resolve(args.repo);
 const out = resolve(args.out || join(repo, "tmp", "appediff"));
+const appediaDir = resolve(args.appedia || join(repo, "appedia"));
+const appediaContent = join(appediaDir, "data", "content.js");
+const appediaManifest = join(appediaDir, ".maintenance", "baseline.json");
+const seedExclude = existsSync(appediaManifest) ? (JSON.parse(readFileSync(appediaManifest, "utf8")).settings?.exclude || "").split(",").map(s => s.trim()).filter(Boolean) : [];
 const work = join(out, ".work");
 // the site itself lives in the working tree: never diff it against base
 const outRel = relative(repo, out);
 const inOut = p => outRel && !outRel.startsWith("..") && (p === outRel || p.startsWith(outRel + "/"));
-const git = (...a) => execFileSync("git", ["-C", repo, ...a], { maxBuffer: 1 << 28 }).toString().trim();
+const git = (...a) => execFileSync("git", ["-C", repo, ...a], { maxBuffer: 1 << 28, stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
 const fail = msg => { console.error(msg); process.exit(1); };
 function run(cmd, argv, opts = {}) {
   const r = spawnSync(cmd, argv, { encoding: "utf8", maxBuffer: 1 << 28, ...opts });
@@ -88,6 +93,9 @@ if (!args.rebuild) {
     const dir = join(work, side);
     checkout(rev, dir);
     say(extract(dir, join(work, side + "-model.json")));
+    const appediaRel = relative(repo, appediaDir).split(sep).join("/");
+    const outSide = relative(repo, out).split(sep).join("/");
+    writeFileSync(join(work, side + "-files.json"), JSON.stringify(inventory(dir, { output: appediaRel, outputExtra: [outSide], exclude: seedExclude })));
     if (typeof args.infra === "string") {
       const tf = join(dir, args.infra);
       const has = existsSync(tf) && readdirSync(tf).some(f => f.endsWith(".tf"));
@@ -107,7 +115,6 @@ const hasInfra = existsSync(join(work, "infra.json"));
 
 /* ---------- 3. first content.js ---------- */
 const contentPath = join(out, "data", "content.js");
-const appediaContent = join(repo, "appedia", "data", "content.js");
 if (!existsSync(contentPath)) {
   mkdirSync(dirname(contentPath), { recursive: true });
   const model = JSON.parse(readFileSync(join(work, "model.json"), "utf8"));
@@ -115,8 +122,9 @@ if (!existsSync(contentPath)) {
   const files = JSON.parse(readFileSync(join(work, "files.json"), "utf8"));
   const template = readFileSync(join(skill, "assets", "content.template.js"), "utf8");
   if (existsSync(appediaContent) && !args["no-appedia"]) {
-    writeFileSync(contentPath, seedFromAppedia(appediaContent, model, infra, files, template));
-    console.log(`content: seeded from ${appediaContent} -> ${contentPath}`);
+    const provenance = appediaProvenance(appediaDir, work, files);
+    writeFileSync(contentPath, seedFromAppedia(appediaContent, model, infra, files, template, provenance));
+    console.log(`content: seeded from ${appediaContent} -> ${contentPath} (${provenance})`);
   } else {
     const app = (model.module || repo.split("/").pop()).split("/").pop().toUpperCase();
     writeFileSync(contentPath, template.replace('app: "APP"', `app: ${JSON.stringify(app)}`).replace('language: "go"', `language: ${JSON.stringify(model.language)}`).replace('title: "APP · change review"', `title: ${JSON.stringify(app + " · " + files.subject)}`));
@@ -127,28 +135,46 @@ if (!existsSync(contentPath)) {
 // Keep from an appedia what describes the code (packages, map, outside systems, infrastructure)
 // and the flows the change touches; drop what the appediff does not show (rules, tasks, the
 // onboarding path, untouched flows). The review is always written fresh.
-function seedFromAppedia(path, model, infra, files, template) {
+function appediaProvenance(dir, work, files) {
+  const manifestPath = join(dir, ".maintenance", "baseline.json");
+  if (!existsSync(manifestPath)) return "unknown provenance: no accepted appedia baseline metadata";
+  try {
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+    if (manifest.version !== 1) return `unknown provenance: unsupported baseline version ${manifest.version}`;
+    const baseFiles = JSON.parse(readFileSync(join(work, "base-files.json"), "utf8"));
+    const headFiles = JSON.parse(readFileSync(join(work, "head-files.json"), "utf8"));
+    const same = snapshot => JSON.stringify(manifest.files) === JSON.stringify(snapshot);
+    if (same(baseFiles)) return "baseline matches change base";
+    if (same(headFiles)) return "baseline matches change head";
+    if (manifest.git?.commit && files.base && manifest.git.commit.startsWith(files.base)) return "baseline commit matches change base; file history differs or is unavailable";
+    if (manifest.git?.commit && files.head && manifest.git.commit.startsWith(files.head)) return "baseline commit matches change head; file history differs or is unavailable";
+    return "baseline matches neither change endpoint";
+  } catch (e) { return `unknown provenance: ${e.message}`; }
+}
+
+function seedFromAppedia(path, model, infra, files, template, provenance) {
   const ctx = { window: {} };
   vm.runInNewContext(readFileSync(path, "utf8"), ctx);
   const a = ctx.window.APPEDIA_CONTENT;
   const tctx = { window: {} };
   vm.runInNewContext(template, tctx);
   const review = tctx.window.APPEDIA_CONTENT.review;
-  const chOf = ref => {
-    const [pk, x, y] = (ref || "").split("."), p = model.packages[pk];
-    if (!p || !x) return "";
-    const s = y ? p.methods[x + "." + y] : p.types[x] || p.funcs[x];
-    return (s && s.ch) || "";
+  const index = makeIndex(a, model, infra);
+  const changes = new Set();
+  for (const [pid, p] of Object.entries(model.packages || {})) for (const section of ["types", "funcs", "methods"]) for (const [name, item] of Object.entries(p[section] || {})) if (["added", "removed", "changed"].includes(item.ch)) changes.add(`${pid}.${name}`);
+  const changedFiles = new Set(files.files.flatMap(f => [f.path, f.old].filter(Boolean)));
+  const touched = id => {
+    const item = index.items.find(x => x.kind === "flow" && x.id === id);
+    return !!item && (item.refs.some(ref => [...changes].some(ch => ch === ref || ch.startsWith(ref + "."))) || item.files.some(file => changedFiles.has(file)));
   };
-  const touched = f => f.participants.some(([, ref]) => ["added", "removed", "changed"].includes(chOf(ref))) || f.steps.some(s => ["added", "removed", "changed"].includes(chOf(s[5])));
-  const flows = Object.fromEntries(Object.entries(a.flows || {}).filter(([, f]) => touched(f)));
+  const flows = Object.fromEntries(Object.entries(a.flows || {}).filter(([id]) => touched(id)));
   const packages = JSON.parse(JSON.stringify(a.packages || {}));
   for (const p of Object.values(packages)) p.rules = [];
   const c = {
     app: a.app, title: `${a.app} · ${files.subject}`, language: a.language || model.language,
     externals: a.externals, flowKinds: a.flowKinds, packages, map: a.map,
     flowGroups: (a.flowGroups || []).map(g => ({ ...g, flows: g.flows.filter(id => flows[id]) })).filter(g => g.flows.length),
-    flows, review, infra: infra ? a.infra : undefined
+    flows, review, infra: infra ? a.infra : undefined, seedProvenance: provenance
   };
   return `/* appediff content: the one file to edit (see the create-appediff skill's references/content-guide.md).
  * Seeded from ${path}: packages, map, outside systems${infra ? ", infrastructure" : ""} and the ${Object.keys(flows).length} flow(s)

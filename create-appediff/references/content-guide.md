@@ -4,6 +4,9 @@
 shape as an appedia's content (see `appedia-content-guide.md`) plus `review`
 and change marks on flow steps. An appediff shows no rules, tasks, tour or
 glossary: leave them out.
+The appedia guide's optional `sources.refs` and `sources.files` are accepted
+here too; references can point at removed symbols because the diff model holds
+both revisions. They help select affected flows when seeding from an appedia.
 
 Rebuild after each step:
 `node <skill>/scripts/appediff.mjs --repo <repo> --lang <lang> [--infra <dir>] --rebuild`.
