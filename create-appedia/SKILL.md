@@ -39,6 +39,7 @@ Two inputs, one build:
 | `model.json` | packages, types, methods, functions, relations, source text | an extractor, from the code |
 | `appedia/data/content.js` | roles, flows, rules, tasks, glossary, map layout | you, by reading the code |
 | `scripts/build.mjs` | validates content against the model, lays out the diagrams (Graphviz), writes the site | — |
+| `data/content-index.json`, `.maintenance/` | generated content associations and accepted/pending update provenance | `scripts/build.mjs`, `scripts/appedia.mjs` |
 
 The model is cheap and mechanical. **The value is in `content.js`,
 especially the flows.** Spend your effort there (see
@@ -165,6 +166,39 @@ layout, so also take screenshots and look at them:
 ```bash
 node <skill>/scripts/screenshot.mjs --site <repo>/appedia --out /tmp/<app>-shots
 ```
+
+### Updating an existing appedia
+
+Use the refresh pipeline when the application changes. It compares extracted
+models and repository file hashes, then writes a review report; it never edits
+the explanations for you.
+
+```bash
+node <skill>/scripts/appedia.mjs --action prepare --repo <repo> --lang go [--src src] [--exclude gen,mocks] [--infra terraform]
+# Review appedia/.maintenance/pending/impact.md and impact.json; update
+# appedia/data/content.js where explanations need changing, then set each
+# report item's disposition and note in impact.json.
+node <skill>/scripts/appedia.mjs --action rebuild --repo <repo>
+node <skill>/scripts/appedia.mjs --action finalize --repo <repo> --jsdom /tmp/appedia-smoke
+```
+
+Use the same extraction settings on each update; they are saved with the
+accepted baseline. For a legacy appedia, pass `--exclude` explicitly (even
+when empty). Python and TypeScript legacy appedias also require `--src`
+explicitly (`--src .` for the repository root); pass `--infra` if its existing
+site has infrastructure.
+Legacy sites without provenance receive a warning and start complete file
+history only after the first accepted update. Finalization requires every
+impact item to be marked `updated`, `unchanged` or `removed` with a note, then
+builds and smoke-tests before accepting new models and hashes. A failed check
+leaves the prior baseline intact. Rebuilds by hand don't advance that baseline.
+
+Use `--action refresh-renderer` to regenerate the site shell and copy the
+current renderer without re-extracting code or accepting a baseline. Optional
+`sources.refs` and `sources.files` on flows, rules, tasks and package entries
+identify supporting helpers and repository files that explain behavior but
+aren't shown as flow steps. The build validates references and generates
+`data/content-index.json`; do not edit that index.
 It uses a headless Firefox or Chrome/Chromium from PATH (or `--browser`) and
 captures the map, the busiest package, an isolated view, a type page and the
 first flow, in light and dark. `--routes infra/map,infra/pkg-<area>` and

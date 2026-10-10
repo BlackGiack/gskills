@@ -64,22 +64,26 @@ project docs (`README`, `CLAUDE.md`/`AGENTS.md`): they hold the *why*.
 **2. Run the pipeline.**
 ```bash
 node <skill>/scripts/appediff.mjs --repo <repo> --lang python|go|ts \
-  [--base <rev>] [--head <rev>|WORKTREE] [--infra <terraform dir>] [--src src] [--exclude gen,mocks]
+  [--base <rev>] [--head <rev>|WORKTREE] [--infra <terraform dir>] [--src src] [--exclude gen,mocks] [--appedia <dir>]
 ```
 It writes `<repo>/tmp/appediff/` (creating `tmp/`), keeps the extracted models
 in `tmp/appediff/.work/`, and writes a first `data/content.js`:
-* **The repo has an appedia** (`<repo>/appedia/data/content.js`): the content
+* **The repo has an appedia** (`<repo>/appedia/data/content.js`, or `--appedia`): the content
   is seeded from it: package entries, map, outside systems, the infrastructure
-  section and the flows the change touches. Rules, tasks, the tour and
-  untouched flows are left out. This saves reading the codebase again; the
-  result must be the same as without it, so check the seeded entries against
-  the head code (an appedia can be stale) and complete them.
+  section and the flows the change touches. Flow selection uses direct refs,
+  participant associations, source files and optional `sources` annotations.
+  Rules, tasks, the tour and untouched flows are left out. When present,
+  `.maintenance/baseline.json` is compared against both revisions and the
+  result reports whether the seed matches base, head, neither or has unknown
+  provenance. Treat the seed as a draft and check it against the head code.
 * **No appedia**: the content starts from the template. `--no-appedia` forces
   this.
 
 The first build stops on purpose: the review still says TODO, and every package
 needs a role. The output lists what is missing, and which changed functions no
-flow or review link mentions yet.
+flow or review link mentions yet. The warning distinguishes direct references
+from participant-only associations. Appedia metadata improves seeding, but is
+optional; this pipeline still starts from its template when no appedia exists.
 
 **3. Read the change.** Before writing anything, read the diff: the Files
 tab of the built site, or `git diff <base> <head>`. For every changed symbol,

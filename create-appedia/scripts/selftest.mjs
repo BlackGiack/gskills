@@ -12,7 +12,7 @@
 // it only when a change is meant to change the extracted model, and review
 // the diff of expected.json like code.
 import { spawnSync } from "node:child_process";
-import { readFileSync, writeFileSync, mkdtempSync, mkdirSync, copyFileSync, rmSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdtempSync, mkdirSync, copyFileSync, cpSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -52,6 +52,11 @@ function summary(model) {
 let failures = 0;
 const fail = (what, detail) => { failures++; console.log(`  ✗ ${what}${detail ? "\n    " + detail.split("\n").join("\n    ") : ""}`); };
 const ok = what => console.log(`  ✓ ${what}`);
+
+const impact = run("node", [join(skill, "tests", "impact.mjs")]);
+if (impact.status === 0) ok("impact helpers: " + impact.stdout.trim()); else fail("impact helper tests", impact.stderr || impact.stdout);
+const bundleCheck = run("node", [join(skill, "scripts", "check-bundles.mjs")]);
+if (bundleCheck.status === 0) ok(bundleCheck.stdout.trim()); else fail("bundled helper sync", bundleCheck.stderr || bundleCheck.stdout);
 
 for (const [lang, extract] of Object.entries(LANGS)) {
   console.log(`\n${lang}`);
@@ -93,6 +98,32 @@ for (const [lang, extract] of Object.entries(LANGS)) {
   else ok("smoke: " + s.stdout.trim().split("\n")[0]);
 }
 
+console.log("\nupdate pipeline");
+{
+  const site = join(work, "refresh-site");
+  const source = join(work, "refresh-source"); cpSync(join(fx, "go"), source, { recursive: true });
+  const r = run("node", [join(skill, "scripts", "appedia.mjs"), "--action", "prepare", "--repo", source, "--out", site, "--lang", "go", "--exclude", ""]);
+  if (r.status !== 0) fail("initial appedia prepare", r.stderr || r.stdout);
+  else {
+    const report = JSON.parse(readFileSync(join(site, ".maintenance", "pending", "impact.json"), "utf8"));
+    const candidate = JSON.parse(readFileSync(join(site, ".maintenance", "pending", "candidate.json"), "utf8"));
+    if (report.items.length || candidate.settings.language !== "go" || candidate.settings.exclude !== "") fail("initial appedia prepare state", JSON.stringify({ items: report.items.length, settings: candidate.settings }));
+    else ok("initial appedia prepare records settings and a clean first-build report");
+    report.items.push({ id: "uncovered:test", reasons: ["test review item"], disposition: "pending", note: "" }); candidate.reviewItemIds = ["uncovered:test"];
+    writeFileSync(join(site, ".maintenance", "pending", "impact.json"), JSON.stringify(report));
+    writeFileSync(join(site, ".maintenance", "pending", "candidate.json"), JSON.stringify(candidate));
+    const unresolved = run("node", [join(skill, "scripts", "appedia.mjs"), "--action", "finalize", "--repo", source, "--out", site, "--jsdom", args.jsdom]);
+    if (unresolved.status !== 1 || !/1 review item\(s\) unresolved/.test(unresolved.stderr)) fail("finalize blocks unresolved impact items", unresolved.stderr || unresolved.stdout);
+    else ok("finalize blocks unresolved impact items before building");
+    report.items[0].disposition = "unchanged"; report.items[0].note = "test disposition";
+    writeFileSync(join(site, ".maintenance", "pending", "impact.json"), JSON.stringify(report));
+    writeFileSync(join(source, "go.mod"), readFileSync(join(source, "go.mod"), "utf8") + "\n// changed after prepare\n");
+    const changed = run("node", [join(skill, "scripts", "appedia.mjs"), "--action", "finalize", "--repo", source, "--out", site, "--jsdom", args.jsdom]);
+    if (changed.status !== 1 || !/application inputs changed after prepare/.test(changed.stderr)) fail("finalize blocks changed source inputs", changed.stderr || changed.stdout);
+    else ok("finalize blocks changed source inputs");
+  }
+}
+
 console.log("\nvalidation");
 {
   const bad = join(work, "bad-content.js");
@@ -100,6 +131,11 @@ console.log("\nvalidation");
   const b = run("node", [join(skill, "scripts", "build.mjs"), "--model", join(work, "go.json"), "--content", bad, "--out", join(work, "bad-site")]);
   if (b.status === 1 && /unknown reference internal~orders\.Service\.Placee/.test(b.stderr)) ok("build rejects an unknown reference");
   else fail("build rejects an unknown reference", `exit ${b.status}: ${(b.stderr || b.stdout).trim()}`);
+  const badSource = join(work, "bad-source-content.js");
+  writeFileSync(badSource, readFileSync(join(skill, "tests", "content", "go.js"), "utf8").replace('place: {\n      title:', 'place: {\n      sources: { refs: ["missing.Helper"], files: [] },\n      title:'));
+  const s = run("node", [join(skill, "scripts", "build.mjs"), "--model", join(work, "go.json"), "--content", badSource, "--out", join(work, "bad-source-site")]);
+  if (s.status === 1 && /flow place\.sources: unknown reference missing\.Helper/.test(s.stderr)) ok("build validates supporting source references");
+  else fail("build validates supporting source references", `exit ${s.status}: ${(s.stderr || s.stdout).trim()}`);
 }
 
 if (args["update-expected"]) writeFileSync(expectedPath, JSON.stringify(expected, null, 2) + "\n");

@@ -9,8 +9,9 @@ the page still works; it falls back to system fonts.
 
 ## What to edit
 
-Only `data/content.js`: package roles, flows, rules, tasks, glossary. All other
-files are generated or copied by the build.
+Normally edit only `data/content.js`: package roles, flows, rules, tasks and
+glossary. During a reviewed refresh, also resolve the generated impact entries
+under `.maintenance/pending/impact.json`; all other site files are generated.
 
 ## Rebuild after the code changes
 
@@ -38,3 +39,9 @@ npm install --prefix /tmp/appedia-smoke jsdom@24
 node <skill>/scripts/smoke.mjs --site appedia --jsdom /tmp/appedia-smoke
 node <skill>/scripts/screenshot.mjs --site appedia --out /tmp/<app>-shots   # needs Firefox or Chrome
 ```
+
+For a reviewed update with a saved baseline, run `prepare`, edit
+`data/content.js` and the pending impact dispositions, then run `rebuild` and
+`finalize --jsdom <dir>`. The accepted models and source hashes are kept in
+`.maintenance/`; a normal build does not move the baseline. To update only the
+renderer and page shell, use `appedia.mjs --action refresh-renderer`.

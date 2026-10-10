@@ -16,6 +16,7 @@ import { execFileSync } from "node:child_process";
 import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
+import { makeIndex } from "./impact.mjs";
 
 const args = Object.fromEntries(process.argv.slice(2).reduce((acc, a, i, all) => (a.startsWith("--") ? [...acc, [a.slice(2), all[i + 1]]] : acc), []));
 const model = JSON.parse(readFileSync(args.model, "utf8"));
@@ -27,6 +28,7 @@ const assets = args.assets || join(dirname(fileURLToPath(import.meta.url)), ".."
 if (!args.model || !args.content || !out) { console.error("usage: node build.mjs --model model.json --content content.js --out dir [--infra-model infra.json] [--assets dir]"); process.exit(2); }
 const infraModel = args["infra-model"] ? JSON.parse(readFileSync(args["infra-model"], "utf8")) : null;
 const infraContent = content.infra || {};
+const sourceModel = structuredClone(model), sourceInfraModel = infraModel ? structuredClone(infraModel) : null;
 
 /* ---------- fold away packages that declare nothing ----------
    A package with no types, functions, methods or variables (a Python __init__.py
@@ -79,7 +81,20 @@ function resolve(ref) {
   return null;
 }
 function check(ref, where) { if (!resolve(ref)) errors.push(`${where}: unknown reference ${ref}`); }
+function checkSources(value, where, fallback = "code") {
+  if (!value || typeof value !== "object" || !value.sources) return;
+  const src = value.sources;
+  if (!Array.isArray(src.refs || []) || !Array.isArray(src.files || [])) { errors.push(`${where}.sources needs refs and files arrays`); return; }
+  for (const raw of src.refs || []) {
+    if (typeof raw !== "string") { errors.push(`${where}.sources.refs entries must be strings`); continue; }
+    const isInfra = raw.startsWith("infra:"), ref = isInfra ? raw.slice(6) : raw;
+    const ok = isInfra || fallback === "infra" ? infraModel && resolveIn(infraModel, ref) : resolve(ref);
+    if (!ok) errors.push(`${where}.sources: unknown ${isInfra || fallback === "infra" ? "infrastructure " : ""}reference ${ref}`);
+  }
+  for (const f of src.files || []) if (typeof f !== "string" || !f || f.startsWith("/") || f.split(/[\\/]/).includes("..")) errors.push(`${where}.sources.files entries must be repository-relative paths without ..`);
+}
 for (const [id, f] of Object.entries(content.flows || {})) {
+  checkSources(f, `flow ${id}`);
   const keys = new Set();
   for (const [k, ref] of f.participants) { keys.add(k); if (!EXTERNAL.has(ref)) check(ref, `flow ${id} participant ${k}`); }
   f.steps.forEach((s, i) => {
@@ -90,10 +105,11 @@ for (const [id, f] of Object.entries(content.flows || {})) {
   });
 }
 for (const g of content.flowGroups || []) for (const id of g.flows) if (!(content.flows || {})[id]) errors.push(`flow group ${g.name}: no flow ${id}`);
-(content.rules || []).forEach(r => { if (r.ref) check(r.ref, `rule ${r.n}`); (r.flows || []).forEach(f => { if (!(content.flows || {})[f]) errors.push(`rule ${r.n}: no flow ${f}`); }); });
-(content.tasks || []).forEach(t => { (t.refs || []).forEach(r => check(r, `task "${t.q}"`)); if (t.flow && !(content.flows || {})[t.flow]) errors.push(`task "${t.q}": no flow ${t.flow}`); });
+(content.rules || []).forEach(r => { checkSources(r, `rule ${r.n}`); if (r.ref) check(r.ref, `rule ${r.n}`); (r.flows || []).forEach(f => { if (!(content.flows || {})[f]) errors.push(`rule ${r.n}: no flow ${f}`); }); });
+(content.tasks || []).forEach(t => { checkSources(t, `task "${t.q}"`); (t.refs || []).forEach(r => check(r, `task "${t.q}"`)); if (t.flow && !(content.flows || {})[t.flow]) errors.push(`task "${t.q}": no flow ${t.flow}`); });
 (content.concepts || []).forEach(c => { if (c[2]) check(c[2], `concept ${c[0]}`); });
 for (const [id, p] of Object.entries(content.packages || {})) {
+  checkSources(p, `package ${id}`);
   if (p.ext) continue;
   if (folded.includes(id)) continue;   // reported below
   if (!model.packages[id]) { errors.push(`package ${id} not in model`); continue; }
@@ -136,6 +152,7 @@ if (infraModel) {
   for (const id of Object.keys(infraModel.packages)) if (!/^[A-Za-z0-9_~-]+$/.test(id)) errors.push(`infra area id "${id}" may only use letters, digits, _ ~ - (it is used in URLs)`);
   const ip = infraContent.packages || {};
   for (const [id, p] of Object.entries(ip)) {
+    checkSources(p, `infra package ${id}`, "infra");
     if (p.ext) continue;
     if (foldedInfra.includes(id)) { warnings.push(`infra area ${id} declares nothing and was folded away`); continue; }
     if (!infraModel.packages[id]) { errors.push(`infra.packages.${id} is not an area of the infrastructure model`); continue; }
@@ -322,5 +339,6 @@ writeFileSync(join(out, "index.html"), `<!doctype html>\n<html lang="en">\n<head
 writeFileSync(join(out, "artifact.html"), shell);
 copyFileSync(join(assets, "appedia.css"), join(out, "appedia.css"));
 copyFileSync(join(assets, "appedia.js"), join(out, "appedia.js"));
+writeFileSync(join(out, "data", "content-index.json"), JSON.stringify(makeIndex(content, sourceModel, sourceInfraModel), null, 2) + "\n");
 const size = s => (readFileSync(s).length / 1024).toFixed(0) + " KiB";
 console.log(`ok: ${Object.keys(content.flows || {}).length} flows, ${Object.keys(layouts).length} diagrams; model.js ${size(join(out, "data", "model.js"))}` + (infraModel ? `; infrastructure: ${infraDiagrams} areas, infra.js ${size(join(out, "data", "infra.js"))}` : ""));

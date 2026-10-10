@@ -20,6 +20,8 @@ appedia/data/content.js (hand-written) ─┘        │                <out>/ar
 | `scripts/extract-go/main.go`, `scripts/extract-python/extract.py`, `scripts/extract-ts/extract.mjs` | Code → model. One per language, same output (`references/model-schema.md`). |
 | `scripts/extract-terraform/extract.py` | Terraform → the same model (areas, resources, references) plus `dataflow`, from the per-type `DATAFLOW` table. Add a provider or a resource type there. |
 | `scripts/build.mjs` | Validates every content reference against the model; computes class-diagram layouts per package with Graphviz (two per package when there is data flow; and the package map when the content doesn't place it); with `--infra-model`, does the same for the infrastructure and writes `data/infra.js`; folds away packages that declare nothing (`foldEmpty`, recorded as `folded` in the packed model); writes the site. |
+| `scripts/impact.mjs` | Language-neutral model comparison, content source index and file inventory. Its byte-identical copy is bundled in create-appediff so either skill works alone. |
+| `scripts/appedia.mjs` | Prepare, rebuild, finalize and renderer-refresh actions for an existing site; stores accepted raw models and source hashes under the target appedia's `.maintenance/`. |
 | `assets/appedia.js` | The whole renderer, one IIFE with no dependencies. Sections, in order: DOM helpers · model lookups · theme · pan/zoom · router · Explore (map, package, focus/isolate, type/function pages, code view) · Flows (sequence diagrams) · Rules / Tasks / Reference pages · search. |
 | `assets/appedia.css` | All styling, through theme tokens. |
 | `assets/shell.html` | The page skeleton; `{{TITLE}}` and `{{APP}}` are filled in by the build. |
@@ -27,6 +29,7 @@ appedia/data/content.js (hand-written) ─┘        │                <out>/ar
 | `scripts/smoke.mjs` | Loads a built site in jsdom, visits every route, fails on errors, empty views and overlapping boxes in isolated views. |
 | `scripts/screenshot.mjs` | Headless Firefox or Chrome screenshots of the main views, light and dark (`?theme=`), animations off (reduced motion). For the visual check jsdom can't do. |
 | `scripts/selftest.mjs` | The skill's regression test: every extractor on its fixture → compare counts, relations and package imports with `tests/expected.json` → build → smoke, plus a check that bad references are rejected. |
+| `scripts/check-bundles.mjs`, `tests/impact.mjs` | Check the bundled helper against the sibling skill when present; test impact classification and inventories without external dependencies. |
 | `tests/fixtures/{go,python,ts}` | A tiny orders service per language. Fictional on purpose. |
 | `tests/content/{go,python,ts}.js` | Content for those fixtures. `go.js` fills every section and doubles as the worked example. |
 
@@ -141,6 +144,11 @@ review `expected.json`. Then:
 * At least one of `tests/content/*.js`.
 * A `CHANGELOG.md` note, if old content needs migrating (constraint 12).
 
+**Change impact analysis.** Update `scripts/impact.mjs`, copy it byte-for-byte
+to create-appediff (or run `scripts/check-bundles.mjs --required`), and extend
+both copies of `tests/impact.mjs`. Run both self-tests. Keep source associations
+advisory: they identify review candidates, they do not prove a flow changed.
+
 **Tune diagram layout.** The Graphviz parameters are in `build.mjs`. Box
 sizes are computed in `boxFor`/`extBox` and must match what `classBox`
 draws. Check the resulting sizes on the fixtures and on one large real project
@@ -171,6 +179,10 @@ node scripts/selftest.mjs --jsdom /tmp/appedia-smoke      # must print "all chec
 * **`tests/expected.json`** changes only on purpose: run `--update-expected`,
   then review its diff like code (each added or removed relation should be
   explainable).
+* The appedia refresh workflow should be exercised on a fixture both before
+  and after it has an accepted baseline; failed finalization must not replace
+  that baseline. `scripts/check-bundles.mjs --required` checks shared helper
+  parity in this combined skills repository.
 
 ## Keeping the docs true
 

@@ -68,6 +68,7 @@ window.APPEDIA_CONTENT = {
   flows: {
     // "<flowId>": {
     //   title: "<Verb the thing>", summary: "<what starts it and what it achieves>",
+    //   sources: { refs: ["<pkg.Helper>"], files: ["<repo-relative config or docs path>"] }, // optional supporting code not shown as a step
     //   participants: [["user", "user"], ["<k>", "<pkg.Type>"], …],
     //   steps: [
     //     // [from, to, kind, label, note, ref]  kinds: key call return cmd go msg io chan self
@@ -87,10 +88,10 @@ window.APPEDIA_CONTENT = {
   // },
 
   rules: [
-    // { n: "1", title: "<the rule>", ref: "<pkg.Type>", why: "<what breaks, concretely>", check: "<test, grep, lint or review>", flows: [] }
+    // { n: "1", title: "<the rule>", ref: "<pkg.Type>", why: "<what breaks, concretely>", check: "<test, grep, lint or review>", flows: [], sources: { refs: [], files: [] } }
   ],
   tasks: [
-    // { q: "<I want to…>", a: "<where to start and what to watch>", refs: ["<pkg.Type>"], flow: "<flowId>" }
+    // { q: "<I want to…>", a: "<where to start and what to watch>", refs: ["<pkg.Type>"], flow: "<flowId>", sources: { refs: [], files: [] } }
   ],
   storage: {
     root: "<where state lives>",

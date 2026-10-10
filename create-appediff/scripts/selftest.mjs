@@ -27,6 +27,8 @@ const run = (cmd, argv, opts = {}) => spawnSync(cmd, argv, { encoding: "utf8", m
 let failures = 0;
 const fail = (what, detail) => { failures++; console.log(`  ✗ ${what}${detail ? "\n    " + String(detail).trim().split("\n").join("\n    ") : ""}`); };
 const ok = what => console.log(`  ✓ ${what}`);
+const impact = run("node", [join(skill, "tests", "impact.mjs")]);
+if (impact.status === 0) ok("impact helpers: " + impact.stdout.trim()); else fail("impact helper tests", impact.stderr || impact.stdout);
 const git = (repo, ...a) => run("git", ["-C", repo, "-c", "user.email=selftest@example.com", "-c", "user.name=selftest", ...a]);
 const lastLine = s => (s || "").trim().split("\n").filter(l => !/DeprecationWarning|trace-deprecation/.test(l)).pop();
 
@@ -111,6 +113,7 @@ console.log("\nseeding from an appedia");
   else {
     const ctx = { window: {} }; vm.runInNewContext(readFileSync(seeded, "utf8"), ctx);
     const C = ctx.window.APPEDIA_CONTENT, problems = [];
+    if (!String(C.seedProvenance).includes("unknown provenance")) problems.push("a legacy appedia without metadata must report unknown provenance");
     if (JSON.stringify(Object.keys(C.flows)) !== '["place"]') problems.push(`flows: expected only "place" (touched), got ${Object.keys(C.flows)}`);
     if (C.rules || C.tasks || C.concepts || C.path) problems.push("rules, tasks, concepts and path must be left out");
     if (C.packages.orders.role !== "Orders and the service that places them." || C.packages.orders.rules.length) problems.push("package entries must be kept, without rule links");
@@ -127,11 +130,11 @@ console.log("\nvalidation");
   const repo = makeRepo("orders-py", true);
   mkdirSync(join(site(repo), "data"), { recursive: true });
   writeFileSync(join(site(repo), "data", "content.js"), readFileSync(join(skill, "tests", "content", "orders-py.js"), "utf8")
-    .replace("[[orders.OrderService.cancel]]", "[[orders.OrderService.cancell]]").replace("[[flow:place.4]]", "[[flow:place.9]]").replace("[[file:orders/events/bus.py]]", "[[file:orders/bus.py]]"));
+    .replace("[[orders.OrderService.cancel]]", "[[orders.OrderService.cancell]]").replace("[[flow:place.4]]", "[[flow:place.9]]").replace("[[file:orders/events/bus.py]]", "[[file:orders/bus.py]]").replace("place: {", 'place: { sources: { refs: ["missing.Helper"], files: [] },'));
   const r = appediff(repo, CASES["orders-py"]);
-  const want = ["review: unknown reference orders.OrderService.cancell", "review: no flow place.9", "review: orders/bus.py is not a changed file"];
+  const want = ["review: unknown reference orders.OrderService.cancell", "review: no flow place.9", "review: orders/bus.py is not a changed file", "flow place.sources: unknown reference missing.Helper"];
   const missing = want.filter(w => !r.stderr.includes(w));
-  if (r.status === 1 && !missing.length) ok("build rejects unknown review links (code, flow step, file)");
+  if (r.status === 1 && !missing.length) ok("build rejects unknown review links and supporting sources");
   else fail("build rejects unknown review links", `exit ${r.status}; missing: ${missing.join("; ")}\n${r.stderr}`);
 }
 
