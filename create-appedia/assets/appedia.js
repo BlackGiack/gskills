@@ -271,9 +271,35 @@
      where at run time: M.dataflow (from the extractor, symbol level, rolled up to packages) plus
      content map.flowEdges (by hand). The viewer switches between the two. */
   let MODE_LABELS = Object.assign({ deps: "Dependencies", flow: "Data flow" }, (MAP && MAP.modes) || (C.map && C.map.modes) || {});
+  /* content map.toggles: [{ label, packages, hidden? }] lets the viewer hide groups of packages (a CLI,
+     tests, a second app) from the map and its isolated views. Hidden boxes take their arrows with them.
+     The viewer's choice is kept per space and label; `hidden: true` is the default for a new viewer. */
+  const TOGGLE_KEY = "appedia-maphide";
+  let toggleState = {};
+  try { toggleState = JSON.parse(localStorage.getItem(TOGGLE_KEY) || "{}") || {}; } catch (e) { /* storage may be blocked */ }
+  const mapToggles = () => ((C.map && C.map.toggles) || []).filter(t => t && t.label && Array.isArray(t.packages));
+  const toggleHidden = t => { const v = own(toggleState, SPACE + ":" + t.label); return v === undefined ? !!t.hidden : v; };
+  function hiddenOnMap() {
+    const out = new Set();
+    for (const t of mapToggles()) if (toggleHidden(t)) t.packages.forEach(id => out.add(id));
+    return out;
+  }
+  // a package box is on the map when the map places it and no toggle hides it
+  const onMap = (id, hidden) => !!MAP.nodes[id] && !hidden.has(id);
+  function toggleSwitch(rerender) {
+    const ts = mapToggles();
+    if (!ts.length) return null;
+    const btn = t => {
+      const shown = !toggleHidden(t);
+      return el("button", { type: "button", class: "depth" + (shown ? " on" : ""), "aria-pressed": shown ? "true" : "false",
+        title: (shown ? "Hide " : "Show ") + t.label + " on the map",
+        onclick: () => { toggleState[SPACE + ":" + t.label] = shown; try { localStorage.setItem(TOGGLE_KEY, JSON.stringify(toggleState)); } catch (e) { /* ignore */ } rerender(); } }, t.label);
+    };
+    return el("span", { class: "modes-seg", role: "group", "aria-label": "Show on the map" }, ts.map(btn));
+  }
   function flowEdges() {
-    const nodes = MAP.nodes, agg = new Map();
-    const add = (a, b, label) => { if (a === b || !nodes[a] || !nodes[b]) return; const k = a + "\u0000" + b; if (!agg.has(k)) agg.set(k, new Set()); if (label) agg.get(k).add(label); };
+    const nodes = MAP.nodes, agg = new Map(), hidden = hiddenOnMap();
+    const add = (a, b, label) => { if (a === b || !onMap(a, hidden) || !onMap(b, hidden)) return; const k = a + "\u0000" + b; if (!agg.has(k)) agg.set(k, new Set()); if (label) agg.get(k).add(label); };
     for (const d of M.dataflow || []) add(d.from.split(".")[0], d.to.split(".")[0], d.label);
     for (const [a, b, label] of (C.map && C.map.flowEdges) || []) add(a, b, label);
     return [...agg].map(([k, labels]) => { const [a, b] = k.split("\u0000"); return [a, b, "flow", [...labels].join(", ")]; });
@@ -295,11 +321,11 @@
   }
   function mapEdges() {
     if (arrows() === "flow") return flowEdges();
-    const nodes = MAP.nodes, out = [];
-    for (const [id, p] of Object.entries(P)) if (nodes[id]) for (const t of p.imports || []) if (nodes[t]) out.push([id, t, ""]);
+    const hidden = hiddenOnMap(), out = [];
+    for (const [id, p] of Object.entries(P)) if (onMap(id, hidden)) for (const t of p.imports || []) if (onMap(t, hidden)) out.push([id, t, ""]);
     // imports are drawn from the model, so a hand-added edge between two code packages is a
     // run-time link (HTTP, queue, event); it is dashed differently. An optional third element labels it.
-    (MAP.extraEdges || []).forEach(([a, b, label]) => out.push([a, b, (isExt(a) || isExt(b)) ? "ext" : "runtime", label || ""]));
+    (MAP.extraEdges || []).filter(([a, b]) => !hidden.has(a) && !hidden.has(b)).forEach(([a, b, label]) => out.push([a, b, (isExt(a) || isExt(b)) ? "ext" : "runtime", label || ""]));
     return out;
   }
   const MAP_HINTS = {
@@ -312,7 +338,7 @@
     const [vx, vy, vw, vh] = MAP.viewBox;
     const svg = sv("svg", { class: "canvas fade", role: "img", "aria-label": "Package map" });
     (MAP.bands || []).forEach(b => { svg.append(sv("rect", { class: "band", x: 6, y: b.y, width: vw - 12, height: b.h, rx: 8 }), sv("text", { class: "bandlabel", x: 18, y: b.y + 15, text: b.label })); });
-    const pos = MAP.nodes;
+    const hidden = hiddenOnMap(), pos = Object.fromEntries(Object.entries(MAP.nodes).filter(([id]) => !hidden.has(id)));
     const edgeG = sv("g"); svg.append(edgeG);
     const drawn = new Set();
     const edges = mapEdges().map(([a, b, kind, label]) => {
@@ -361,7 +387,7 @@
     if (arrows() === "flow") { const busy = new Set(edges.flatMap(E => [E.a, E.b])); for (const [id, g] of Object.entries(nodeEls)) if (!busy.has(id)) g.classList.add("idle"); }
     stage.replaceChildren(svg, hint);
     const pz = panZoom(svg, { x: vx, y: vy, w: vw, h: vh });
-    stageTools(stage, pz, modeSwitch(renderMap));
+    stageTools(stage, pz, [modeSwitch(renderMap), toggleSwitch(renderMap)].filter(Boolean));
     if (zoomOutFrom && pos[zoomOutFrom]) { const [x, y] = pos[zoomOutFrom]; const r = { x: x - NW / 2, y: y - NH / 2, w: NW, h: NH }; pz.set({ x: r.x - r.w * 0.7, y: r.y - r.h * 1.4, w: r.w * 2.4, h: r.h * 3.8 }); pz.animateTo(pz.home, 340); }
     zoomOutFrom = null;
     renderIntroPanel();
@@ -404,7 +430,8 @@
 
   /* ----- map focus: one package and the packages it is linked to, in the current arrow mode ----- */
   function renderMapFocus(id, depth) {
-    if (!MAP.nodes[id]) { go("map"); return; }
+    // a package the viewer hid has no place to be isolated from: back to the map
+    if (!MAP.nodes[id] || hiddenOnMap().has(id)) { go("map"); return; }
     const c = C.packages[id] || { label: id, sub: "", role: "" };
     setCrumbs([["map", "map", null], ["focus: " + c.label, null, id]], 0);
     const NW = 158, NH = 48, all = mapEdges(), adj = {};
@@ -466,7 +493,7 @@
     stage.replaceChildren(svg, hint);
     const depthBtn = d => el("button", { type: "button", class: "depth" + (d === depth ? " on" : ""), "aria-pressed": d === depth ? "true" : "false", onclick: () => go(`mapfocus-${id}${d === 2 ? ".2" : ""}`) }, d === 1 ? "1 hop" : "2 hops");
     var pz = panZoom(svg, box);
-    stageTools(stage, pz, [modeSwitch(() => renderMapFocus(id, depth)), depthBtn(1), depthBtn(2), el("span", { class: "toolsep" })].filter(Boolean));
+    stageTools(stage, pz, [modeSwitch(() => renderMapFocus(id, depth)), toggleSwitch(() => renderMapFocus(id, depth)), depthBtn(1), depthBtn(2), el("span", { class: "toolsep" })].filter(Boolean));
     zoomOutFrom = null;
     renderPackagePanel(id, c, P[id] || null);
   }

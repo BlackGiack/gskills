@@ -1,214 +1,37 @@
-# Bubble Tea Design Patterns
+# Composition Patterns
 
-Common architectural patterns for TUI development.
+Use the smallest composition that meets the interaction needs. Reuse Bubbles models for the underlying widgets; custom code should primarily coordinate state, layout, and domain actions.
 
-## Pattern 1: Single-View Application
+## Single Screen
 
-**When**: Simple, focused TUIs with one main view
-**Components**: 1-3 components, single model struct
-**Complexity**: Low
+Use a parent model with only the required components. A list may already provide filtering, pagination, help, and status feedback; enable or style those features before introducing more models. Avoid a separate navigation framework for a single focused task.
 
-```go
-type model struct {
-    mainComponent component.Model
-    ready bool
-}
-```
+## Multiple Screens or Tabs
 
-## Pattern 2: Multi-View State Machine
+Represent the active screen explicitly and route input to it. Decide which screens retain state when inactive and which operations continue in the background. Initialize screens and their commands deliberately when first shown or activated.
 
-**When**: Multiple distinct screens (setup, main, done)
-**Components**: State enum + view-specific components
-**Complexity**: Medium
+Render tab labels with the project's layout and styling tools, or reuse an existing project tab component. Tabs are a navigation pattern, not an assumed Bubbles package. Treat screen transitions and async-result routing separately: hidden screens may still own pending results.
 
-```go
-type view int
-const (
-    setupView view = iota
-    mainView
-    doneView
-)
+## Master-Detail or Multiple Panes
 
-type model struct {
-    currentView view
-    // Components for each view
-}
-```
+Compose `list` or `table` with a `viewport` or another appropriate detail component. Track focus independently from selection. Recalculate pane dimensions on resize and collapse optional panes in a narrow terminal.
 
-## Pattern 3: Composable Views
+Load expensive details asynchronously. Associate results with the selection that requested them, reject stale results, and show loading, empty, and error states. Use bounded previews rather than reading arbitrarily large files into the model.
 
-**When**: Complex UIs with reusable sub-components
-**Pattern**: Embed multiple bubble models
-**Example**: Dashboard with multiple panels
+## Forms and Wizards
 
-```go
-type model struct {
-    panel1 Panel1Model
-    panel2 Panel2Model
-    panel3 Panel3Model
-}
+Reuse `textinput` and `textarea` for editing. Add only the navigation and validation state the workflow requires. Preserve startup and focus commands, blur the previous field, and route input to the active field.
 
-// Each panel is itself a Bubble Tea model
-```
+Define step transitions, validation timing, back navigation, and how values survive changing steps. Keep validation errors actionable and distinguish field editing from submission or cancellation. Do not let global printable-key shortcuts intercept entered text.
 
-## Pattern 4: Master-Detail
+## Background Work and Progress
 
-**When**: Selection in one pane affects display in another
-**Example**: File list + preview, Email list + content
-**Layout**: Two-pane or three-pane
+Use `spinner` when progress is unknown and `progress` when a real fraction or count is available. Do not display fabricated percentages. Reuse a list's existing activity indicator if sufficient.
 
-```go
-type model struct {
-    list list.Model
-    detail viewport.Model
-    selectedItem int
-}
-```
+Represent operation state explicitly and return completion or error messages from commands. Define concurrency limits, queue ordering where needed, cancellation, retry semantics, and terminal states. Keep animation messages flowing while work runs; stop scheduling them when no longer needed.
 
-## Pattern 5: Form Flow
+## Search and Streaming Views
 
-**When**: Multi-step data collection
-**Pattern**: Array of inputs + focus management
-**Example**: Configuration wizard
+Compose `viewport` with `textinput` when separate search entry is needed; prefer built-in list filtering for item selection. Define search mode, match navigation, and behavior when content changes.
 
-```go
-type model struct {
-    inputs []textinput.Model
-    focusIndex int
-    step int
-}
-```
-
-## Pattern 6: Progress Tracker
-
-**When**: Long-running sequential operations
-**Pattern**: Queue + progress per item
-**Example**: Installation, download manager
-
-```go
-type model struct {
-    items []Item
-    currentIndex int
-    progress progress.Model
-    spinner spinner.Model
-}
-```
-
-## Layout Patterns
-
-### Vertical Stack
-```go
-lipgloss.JoinVertical(lipgloss.Left,
-    header,
-    content,
-    footer,
-)
-```
-
-### Horizontal Panels
-```go
-lipgloss.JoinHorizontal(lipgloss.Top,
-    leftPanel,
-    separator,
-    rightPanel,
-)
-```
-
-### Three-Column (File Manager Style)
-```go
-lipgloss.JoinHorizontal(lipgloss.Top,
-    parentDir,   // 25% width
-    currentDir,  // 35% width
-    preview,     // 40% width
-)
-```
-
-## Message Passing Patterns
-
-### Custom Messages
-```go
-type myCustomMsg struct {
-    data string
-}
-
-func doSomethingCmd() tea.Msg {
-    return myCustomMsg{data: "result"}
-}
-
-func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-    switch msg := msg.(type) {
-    case myCustomMsg:
-        // Handle custom message
-    }
-}
-```
-
-### Async Operations
-```go
-func fetchDataCmd() tea.Cmd {
-    return func() tea.Msg {
-        // Do async work
-        data := fetchFromAPI()
-        return dataFetchedMsg{data}
-    }
-}
-```
-
-## Error Handling Pattern
-
-```go
-type errMsg struct{ err error }
-
-func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-    switch msg := msg.(type) {
-    case errMsg:
-        m.err = msg.err
-        m.errVisible = true
-        return m, nil
-    }
-}
-```
-
-## Keyboard Navigation Pattern
-
-```go
-case tea.KeyMsg:
-    switch msg.String() {
-    case "up", "k":
-        m.cursor--
-    case "down", "j":
-        m.cursor++
-    case "enter":
-        m.selectCurrent()
-    case "q", "ctrl+c":
-        return m, tea.Quit
-    }
-```
-
-## Responsive Layout Pattern
-
-```go
-case tea.WindowSizeMsg:
-    m.width = msg.Width
-    m.height = msg.Height
-
-    // Update component dimensions
-    m.viewport.Width = msg.Width
-    m.viewport.Height = msg.Height - 5  // Reserve space for header/footer
-```
-
-## Help Overlay Pattern
-
-```go
-type model struct {
-    showHelp bool
-    help help.Model
-}
-
-func (m model) View() string {
-    if m.showHelp {
-        return m.help.View()
-    }
-    return m.mainView()
-}
-```
+For large or streaming data, bound memory and update frequency. Decide whether new content follows the tail or preserves the user's scroll position. Debounce expensive search when needed and reject results from superseded queries.

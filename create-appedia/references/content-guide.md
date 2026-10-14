@@ -146,6 +146,12 @@ map: {
   rather than who imports whom. With flow edges (or data flow from the
   extractor), a **Dependencies | Data flow** switch appears on every diagram;
   `modes: { deps: "Imports", flow: "Data flow" }` renames its two buttons.
+* `toggles: [{ label: "CLI", packages: ["cli", "cmd"] }]` adds a button per
+  group to the map and its isolated views, so a reader can hide packages that
+  get in the way (a second deployable, a CLI, test helpers). Hidden boxes take
+  their arrows with them; `hidden: true` hides the group until the reader
+  shows it. Each viewer's choice is remembered in their browser, by label.
+  Leave room for the group on the map anyway: it is shown by default.
 * For bigger projects, either list only the 15-30 packages that matter (the
   rest stay reachable through search and links), or leave out `map.nodes` and
   let the build lay out the whole import graph automatically.

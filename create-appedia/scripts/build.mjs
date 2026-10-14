@@ -127,6 +127,20 @@ if (content.map && content.map.nodes) for (const id of Object.keys(content.map.n
   for (const end of e.slice(0, 2)) if (folded.includes(end)) warnings.push(`map.extraEdges[${i}]: ${end} was folded away; the edge is not drawn`);
   else if (!(content.packages || {})[end] && !model.packages[end]) errors.push(`map.extraEdges[${i}]: ${end} is neither a package nor an entry in content.packages`);
 });
+// map.toggles: [{ label, packages: [ids], hidden? }], buttons that hide groups of boxes from the map
+function checkToggles(map, where, known) {
+  if (!map || map.toggles === undefined) return;
+  if (!Array.isArray(map.toggles)) { errors.push(`${where}.toggles: expected a list of { label, packages }`); return; }
+  const seen = new Set();
+  map.toggles.forEach((t, i) => {
+    if (!t || typeof t.label !== "string" || !t.label || !Array.isArray(t.packages)) { errors.push(`${where}.toggles[${i}]: expected { label: "…", packages: ["<id>", …], hidden?: true }`); return; }
+    if (seen.has(t.label)) errors.push(`${where}.toggles[${i}]: label "${t.label}" is used twice (the viewer's choice is saved by label)`);
+    seen.add(t.label);
+    if (!t.packages.length) warnings.push(`${where}.toggles[${i}] "${t.label}" hides nothing`);
+    for (const id of t.packages) if (!known(id)) errors.push(`${where}.toggles[${i}] "${t.label}": ${id} is neither a package nor an entry in content.packages`);
+  });
+}
+checkToggles(content.map, "map", id => folded.includes(id) || !!(content.packages || {})[id] || !!model.packages[id]);
 // the map draws fixed 158×48 boxes (appedia.js renderMap): flag what the reader would see clipped or hidden
 const MAP_LABEL_MAX = 19, MAP_SUB_MAX = 28;
 for (const [id, p] of Object.entries(content.packages || {})) {
@@ -161,6 +175,7 @@ if (infraModel) {
   for (const id of Object.keys(infraModel.packages)) if (!ip[id]) warnings.push(`infra area ${id} has no entry in infra.packages: it will show without a role`);
   const im = infraContent.map || {};
   const known = id => ip[id] || infraModel.packages[id];
+  checkToggles(im, "infra.map", known);
   for (const id of Object.keys(im.nodes || {})) if (!known(id)) errors.push(`infra.map node ${id} is neither an area nor an entry in infra.packages`);
   for (const [field, list] of [["extraEdges", im.extraEdges], ["flowEdges", im.flowEdges]]) (list || []).forEach((e, i) => {
     if (!Array.isArray(e) || e.length < 2) { errors.push(`infra.map.${field}[${i}]: expected [from, to] or [from, to, "label"]`); return; }

@@ -22,7 +22,8 @@ published as a claude.ai artifact. It has three zoom levels:
 It also has **Flows** (sequence diagrams of what the system does, each step
 linked to its code), **Rules**, **I want to…** and **Reference** pages, and
 global search (`/`). Ctrl+click a box on the map to isolate that package with
-its neighbours.
+its neighbours. Optional map toggles (`map.toggles` in `content.js`) let the
+reader hide groups of packages, such as a CLI, from the map.
 
 When the repository holds infrastructure as code (Terraform today), an
 **Infrastructure** tab shows it with the same three levels: service areas

@@ -107,6 +107,29 @@ if (anyFlow(M) || anyFlow(MI) || ((C.map && C.map.flowEdges) || []).length || ((
     d.querySelector("#stage .modes-seg button")?.click();
   }
 }
+// map.toggles: each button hides (or shows) its packages' boxes, and clicking it again undoes that
+for (const [space, map] of [["", C.map], ["infra/", MI && C.infra && C.infra.map]]) {
+  if (!map || !Array.isArray(map.toggles) || !map.toggles.length) continue;
+  const placed = space ? Object.keys(map.nodes || {}) : mapNodes.filter(id => !folded.has(id));
+  for (const t of map.toggles) {
+    w.location.hash = space + "map"; await tick();
+    const n0 = d.querySelectorAll("#stage .node").length;
+    const btn = [...d.querySelectorAll('#stage .modes-seg[aria-label="Show on the map"] button')].find(b => b.textContent === t.label);
+    if (!btn) { errors.push(`#${space}map: no toggle button "${t.label}"`); continue; }
+    const wasShown = btn.getAttribute("aria-pressed") === "true", expect = t.packages.filter(id => placed.includes(id)).length;
+    btn.click(); await tick();
+    const n1 = d.querySelectorAll("#stage .node").length;
+    if (n0 - n1 !== (wasShown ? expect : -expect)) errors.push(`#${space}map: toggle "${t.label}" changed the boxes from ${n0} to ${n1}, expected ${wasShown ? "−" : "+"}${expect}`);
+    const hiddenOne = t.packages.find(id => placed.includes(id));
+    if (wasShown && hiddenOne) {
+      w.location.hash = `${space}mapfocus-${hiddenOne}`; await tick(); await tick();
+      if (w.location.hash !== `#${space}map`) errors.push(`#${space}mapfocus-${hiddenOne}: a hidden package can still be isolated`);
+    }
+    w.location.hash = space + "map"; await tick();
+    [...d.querySelectorAll('#stage .modes-seg[aria-label="Show on the map"] button')].find(b => b.textContent === t.label)?.click(); await tick();
+    if (d.querySelectorAll("#stage .node").length !== n0) errors.push(`#${space}map: toggle "${t.label}" clicked twice does not restore the map`);
+  }
+}
 if (MI) {
   const tab = d.querySelector('.modes button[data-mode="infra"]');
   if (!tab || tab.hidden) errors.push("infrastructure model loaded but no Infrastructure tab");
