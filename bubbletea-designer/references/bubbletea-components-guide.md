@@ -1,141 +1,46 @@
-# Bubble Tea Components Guide
+# Reusing Bubbles Components
 
-Complete reference for Bubble Tea ecosystem components.
+## Selection Rule
 
-## Core Input Components
+Inspect the project's Bubbles version and existing components before writing custom UI primitives. Prefer these options in order: reuse an existing project component, configure a Bubbles component, compose or wrap Bubbles components, then implement a specific missing capability.
 
-### textinput.Model
-**Purpose**: Single-line text input
-**Use Cases**: Search boxes, single field forms, command input
-**Key Methods**:
-- `Focus()` / `Blur()` - Focus management
-- `SetValue(string)` - Set text programmatically
-- `Value()` - Get current text
+Verify the selected version's exported API and examples. The names below identify component packages, not a promise that every release has identical types or methods.
 
-**Example Pattern**:
-```go
-input := textinput.New()
-input.Placeholder = "Search..."
-input.Focus()
-```
+| UI responsibility | Start with | Check before adding custom code |
+|-------------------|------------|---------------------------------|
+| Single-line input or search query | `textinput` | Editing, cursor behavior, paste, suggestions, validation hooks, focus |
+| Multi-line input | `textarea` | Wrapping, editing, scrolling, paste, dimensions |
+| Browsing or selecting items | `list` | Filtering, pagination, delegates, built-in help, spinner, and status messages |
+| Tabular selection | `table` | Columns, rows, selection, styles, focus, sizing; implement sorting only if needed and absent |
+| Scrollable content | `viewport` | Scrolling, content updates, dimensions, keybindings; bound the backing data separately |
+| File selection | `filepicker` | Directory traversal, extension filtering, selection and error handling |
+| Work with measurable completion | `progress` | Supported animation and percentage update API |
+| Work with unknown completion | `spinner` | Tick startup, message routing, stopping when work finishes |
+| Page navigation | `paginator` | Whether the chosen list already provides pagination |
+| Countdown or elapsed duration | `timer` / `stopwatch` | Startup, tick lifecycle, stop and reset behavior |
+| Keybinding definitions and help | `key` + `help` | Shared bindings, enabled actions, compact and expanded help |
 
-### textarea.Model
-**Purpose**: Multi-line text editing
-**Use Cases**: Message composition, text editing, large text input
-**Key Features**: Line wrapping, scrolling, cursor management
+Use Lip Gloss for styling and layout around the components. Styling requirements alone rarely justify replacing a working input or list implementation.
 
-### filepicker.Model
-**Purpose**: File system navigation
-**Use Cases**: File selection, file browsers
-**Key Features**: Directory traversal, file type filtering, path resolution
+## Composition Versus New Packages
 
-## Display Components
+Tabs, multi-screen navigation, master-detail panes, dropdowns, and wizards are application patterns. Build them from verified components and explicit application state. An upstream example name is not a package API.
 
-### viewport.Model
-**Purpose**: Scrollable content display
-**Use Cases**: Log viewers, document readers, large text display
-**Key Methods**:
-- `SetContent(string)` - Set viewable content
-- `GotoTop()` / `GotoBottom()` - Navigation
-- `LineUp()` / `LineDown()` - Scroll control
+For example, a searchable selector may use `list` filtering or `textinput` suggestions rather than a new autocomplete engine. A wizard may compose several inputs with step state; a tab bar may render labels while the application routes focus and messages.
 
-### table.Model
-**Purpose**: Tabular data display
-**Use Cases**: Data tables, structured information
-**Key Features**: Column definitions, row selection, styling
+## Integration Checklist
 
-### list.Model
-**Purpose**: Filterable, navigable lists
-**Use Cases**: Item selection, menus, file lists
-**Key Features**: Filtering, pagination, custom item delegates
+- Construct and configure child models using their documented APIs; initialize persistent fields in a constructor or another state transition that returns the updated model.
+- Return startup commands required by the selected components. Preserve commands returned by focus operations and child updates, including cursor blink and animation scheduling.
+- Assign the updated child model back to its owner. Route keys to the focused component and non-key messages to the components that own the relevant operation or animation.
+- Combine independent commands with `tea.Batch`; do not rely on batch ordering. For dependent work, use the version's sequencing API or chain completion messages.
+- Resize components through the selected version's API, accounting for layout borders, padding, headers, and footers.
 
-### paginator.Model
-**Purpose**: Page-based navigation
-**Use Cases**: Paginated content, chunked display
+## Official Sources
 
-## Feedback Components
+- [Bubbles catalog and source](https://github.com/charmbracelet/bubbles)
+- [Bubble Tea examples](https://github.com/charmbracelet/bubbletea/tree/main/examples)
+- [Bubble Tea v2 upgrade guide](https://github.com/charmbracelet/bubbletea/blob/main/UPGRADE_GUIDE_V2.md)
+- [Bubbles v2 upgrade guide](https://github.com/charmbracelet/bubbles/blob/main/UPGRADE_GUIDE_V2.md)
 
-### spinner.Model
-**Purpose**: Loading/waiting indicator
-**Styles**: Dot, Line, Minidot, Jump, Pulse, Points, Globe, Moon, Monkey
-
-### progress.Model
-**Purpose**: Progress indication
-**Modes**: Determinate (0-100%), Indeterminate
-**Styling**: Gradient, solid color, custom
-
-### timer.Model
-**Purpose**: Countdown timer
-**Use Cases**: Timeouts, timed operations
-
-### stopwatch.Model
-**Purpose**: Elapsed time tracking
-**Use Cases**: Duration measurement, time tracking
-
-## Navigation Components
-
-### tabs
-**Purpose**: Tab-based view switching
-**Pattern**: Lipgloss-based tab rendering
-
-### help.Model
-**Purpose**: Help text and keyboard shortcuts
-**Modes**: Short (inline), Full (overlay)
-
-## Layout with Lipgloss
-
-**JoinVertical**: Stack components vertically
-**JoinHorizontal**: Place components side-by-side
-**Place**: Position with alignment
-**Border**: Add borders and padding
-
-## Component Initialization Pattern
-
-```go
-type model struct {
-    component1 component1.Model
-    component2 component2.Model
-}
-
-func (m model) Init() tea.Cmd {
-    return tea.Batch(
-        m.component1.Init(),
-        m.component2.Init(),
-    )
-}
-
-func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-    var cmds []tea.Cmd
-
-    // Update each component
-    var cmd tea.Cmd
-    m.component1, cmd = m.component1.Update(msg)
-    cmds = append(cmds, cmd)
-
-    m.component2, cmd = m.component2.Update(msg)
-    cmds = append(cmds, cmd)
-
-    return m, tea.Batch(cmds...)
-}
-```
-
-## Message Handling
-
-**Standard Messages**:
-- `tea.KeyMsg` - Keyboard input
-- `tea.MouseMsg` - Mouse events
-- `tea.WindowSizeMsg` - Terminal resize
-- `tea.QuitMsg` - Quit signal
-
-**Component Messages**:
-- `progress.FrameMsg` - Progress/spinner animation
-- `spinner.TickMsg` - Spinner tick
-- `textinput.ErrMsg` - Input errors
-
-## Best Practices
-
-1. **Always delegate**: Let components handle their own messages
-2. **Batch commands**: Use `tea.Batch()` for multiple commands
-3. **Focus management**: Only one component focused at a time
-4. **Dimension tracking**: Update component sizes on `WindowSizeMsg`
-5. **State separation**: Keep UI state in model, business logic separate
+These links point to upstream documentation. Select the matching release tag or version-specific package documentation before adapting code to an existing project.

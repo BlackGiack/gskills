@@ -47,6 +47,9 @@ window.APPEDIA_CONTENT = {
     extraEdges: [
       // ["<packageId>", "<external key>"]           to or from something outside the code (dotted)
       // ["<packageId>", "<packageId>", "<label>"]   a run-time link that isn't an import, e.g. "HTTPS" (dashed)
+    ],
+    toggles: [
+      // { label: "CLI", packages: ["<packageId>", …] }   a button that hides these boxes; hidden: true to start hidden
     ]
   },
 

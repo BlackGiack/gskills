@@ -1,168 +1,47 @@
-# Bubble Tea Architecture Best Practices
+# Model Lifecycle and Interaction
 
-## Model Design
+## State Ownership
 
-### Keep State Flat
-❌ Avoid: Deeply nested state
-✅ Prefer: Flat structure with clear fields
+Keep application data, navigation, and operation status in an appropriate owner; let child components manage their own editing, selection, and scrolling state. Group related state in cohesive models rather than forcing every field into one flat struct. Do not maintain competing copies of a component's state without a concrete need.
 
-```go
-// Good
-type model struct {
-    items []Item
-    cursor int
-    selected map[int]bool
-}
+Construct persistent component state before the program starts or in an update that returns the modified model. Assignments made inside a value-receiver `Init()` change a copy; `Init()` returns startup commands, not an updated model. Use each component's documented startup behavior rather than calling a presumed common `Init()` method.
 
-// Avoid
-type model struct {
-    state struct {
-        data struct {
-            items []Item
-        }
-    }
-}
-```
+## Messages and Commands
 
-### Separate Concerns
-- UI state in model
-- Business logic in separate functions
-- Network/IO in commands
+- Keep `Update()` responsive. Put blocking file, network, and subprocess work in commands and return typed result or error messages.
+- Capture the inputs a command needs. Do not mutate model state from a command or background goroutine; apply results through `Update()`.
+- Save each updated child model and return its command. Losing commands can stop animations, cursor blinking, or future results.
+- Use `tea.Batch` only for independent work; its commands have no guaranteed completion order. Express dependencies through completion messages or an appropriate sequencing API.
+- Distinguish spinner ticks from progress animation frames and route them to their owners, including when those owners are not focused.
+- Give asynchronous operations cancellation and shutdown behavior. Use request or generation IDs when late results could overwrite newer selections or searches.
+- For streaming work, define bounded buffering, how the next message is requested, and how producers exit. Bound retained logs and preview sizes independently of the visible viewport.
 
-### Component Ownership
-Each component owns its state. Don't reach into component internals.
+## Focus and Key Routing
 
-## Update Function
+Define one active input destination per interaction context. Route editing keys to the focused widget; route operation and animation messages independently of focus. A modal should capture relevant input while leaving necessary background work running.
 
-### Message Routing
-Route messages to appropriate handlers:
+Handle genuinely global shortcuts explicitly. Do not bind printable keys such as `q`, `j`, `k`, or `/` globally when they must be usable in a text field. Separate “close modal,” “cancel operation,” “go back,” and “quit,” and define the policy for unsaved work.
 
-```go
-func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-    switch msg := msg.(type) {
-    case tea.KeyMsg:
-        return m.handleKeyboard(msg)
-    case tea.WindowSizeMsg:
-        return m.handleResize(msg)
-    }
-    return m.updateComponents(msg)
-}
-```
+Reuse `key` bindings for help so that displayed shortcuts match enabled actions. Avoid forwarding the same consumed key to multiple components.
 
-### Command Batching
-Batch multiple commands:
+## Rendering and Resize
 
-```go
-var cmds []tea.Cmd
-cmds = append(cmds, cmd1, cmd2, cmd3)
-return m, tea.Batch(cmds...)
-```
+Keep `View()` deterministic and free of I/O or state mutation. If profiling justifies a render cache, update the cache in a state transition and invalidate it when data, dimensions, or styles change. A value-receiver `View()` cannot persist cache-field assignments.
 
-## View Function
+Handle window-size messages and calculate available content space after borders, padding, headers, and footers. Clamp dimensions to valid values for the component API and provide a narrow-terminal fallback. Use terminal display-width-aware measurement for styled text and wide Unicode characters rather than byte lengths.
 
-### Cache Expensive Renders
-Don't recompute on every View() call:
+Choose inline versus alternate-screen behavior deliberately using the selected Bubble Tea version. Avoid direct terminal writes that interfere with rendering; use supported output or logging facilities, handling file-open errors and closing owned log files.
 
-```go
-type model struct {
-    cachedView string
-    dirty bool
-}
+## User States and Verification
 
-func (m model) View() string {
-    if m.dirty {
-        m.cachedView = m.render()
-        m.dirty = false
-    }
-    return m.cachedView
-}
-```
+Make loading, empty, error, retry, cancellation, and completion behavior explicit. Keep keyboard navigation usable without a mouse and provide visible focus and selection indicators beyond color alone.
 
-### Responsive Layouts
-Adapt to terminal size:
+For implementation, verify:
 
-```go
-if m.width < 80 {
-    // Compact layout
-} else {
-    // Full layout
-}
-```
+- Model transitions for navigation, focus changes, selection, errors, and cancellation.
+- Child commands survive routing; timers and animations start and stop correctly.
+- Late asynchronous results cannot overwrite newer state.
+- Resizing, very small terminals, empty data, and long or wide text behave sensibly.
+- Representative interaction flows work in a terminal when available. View snapshots can check rendering but do not prove keyboard or command behavior.
 
-## Performance
-
-### Minimize Allocations
-Reuse slices and strings where possible
-
-### Defer Heavy Operations
-Move slow operations to commands (async)
-
-### Debounce Rapid Updates
-Don't update on every keystroke for expensive operations
-
-## Error Handling
-
-### User-Friendly Errors
-Show actionable error messages
-
-### Graceful Degradation
-Fallback when features unavailable
-
-### Error Recovery
-Allow user to retry or cancel
-
-## Testing
-
-### Test Pure Functions
-Extract business logic for easy testing
-
-### Mock Commands
-Test Update() without side effects
-
-### Snapshot Views
-Compare View() output for visual regression
-
-## Accessibility
-
-### Keyboard-First
-All features accessible via keyboard
-
-### Clear Indicators
-Show current focus, selection state
-
-### Help Text
-Provide discoverable help (? key)
-
-## Code Organization
-
-### File Structure
-```
-main.go         - Entry point, model definition
-update.go       - Update handlers
-view.go         - View rendering
-commands.go     - Command definitions
-messages.go     - Custom message types
-```
-
-### Component Encapsulation
-One component per file for complex TUIs
-
-## Debugging
-
-### Log to File
-```go
-f, _ := os.OpenFile("debug.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
-log.SetOutput(f)
-log.Printf("Debug: %+v", msg)
-```
-
-### Debug Mode
-Toggle debug view with key binding
-
-## Common Pitfalls
-
-1. **Forgetting tea.Batch**: Returns only last command
-2. **Not handling WindowSizeMsg**: Fixed-size components
-3. **Blocking in Update()**: Freezes UI - use commands
-4. **Direct terminal writes**: Use tea.Println for above-TUI output
-5. **Ignoring ready state**: Rendering before initialization complete
+Format and build against the actual dependencies, run relevant tests and required checks, and use the race detector when concurrency changes warrant it. Clearly distinguish static review, compilation, automated tests, and manual terminal checks.

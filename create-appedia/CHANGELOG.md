@@ -3,6 +3,14 @@
 Newest first. Note anything that changes the content format or the commands
 people run, and how to migrate (see CONTRIBUTING.md, constraint 12).
 
+## 0.5.0 — 2026-10-13
+
+* Added optional `map.toggles` (also `infra.map.toggles`): `[{ label, packages,
+  hidden? }]`. Each entry is a button on the map and its isolated views that
+  hides or shows those packages and their arrows; the viewer's choice is kept
+  in their browser. The build validates the package IDs; the smoke test clicks
+  every toggle. Existing content needs no change.
+
 ## 0.4.0 — 2026-10-10
 
 * Added `appedia.mjs` to prepare and review model/content impacts, rebuild an

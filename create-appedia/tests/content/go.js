@@ -27,7 +27,8 @@ window.APPEDIA_CONTENT = {
     viewBox: [0, 0, 760, 420],
     bands: [{ label: "ENTRY", y: 16, h: 74 }, { label: "HTTP", y: 104, h: 84 }, { label: "DOMAIN", y: 202, h: 84 }, { label: "STORAGE", y: 300, h: 84 }],
     nodes: { "cmd~orders": [380, 53], client: [150, 146], api: [380, 146], "internal~orders": [380, 244], store: [380, 342] },
-    extraEdges: [["client", "api"]]
+    extraEdges: [["client", "api"]],
+    toggles: [{ label: "Entry", packages: ["cmd~orders"] }]
   },
   packages: {
     "cmd~orders": { label: "cmd/orders", sub: "main", role: "Wires the store, the clock, the service and the HTTP server, then listens.", files: { "main.go": "wiring and ListenAndServe" }, notes: [], rules: [], key: [] },

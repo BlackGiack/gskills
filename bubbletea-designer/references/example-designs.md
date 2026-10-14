@@ -1,98 +1,43 @@
-# Example TUI Designs
+# Illustrative Designs
 
-Real-world design examples with component selections.
+These are examples of reasoning, not runnable implementations, fixed component bundles, or effort estimates. Verify component APIs against the project's dependency versions.
 
-## Example 1: Log Viewer
+## Searchable Log Viewer
 
-**Requirements**: View large log files, search, navigate
-**Archetype**: Viewer
-**Components**:
-- viewport.Model - Main log display
-- textinput.Model - Search input
-- help.Model - Keyboard shortcuts
+**Reuse:** `viewport` for scrolling and `textinput` for the query. Reuse `key` and `help` where shortcuts need discovery. Pagination is unnecessary unless page-based navigation is a requirement.
 
-**Architecture**:
-```go
-type model struct {
-    viewport viewport.Model
-    searchInput textinput.Model
-    searchMode bool
-    matches []int
-    currentMatch int
-}
-```
+**Custom behavior:** Match indexing, highlighting, and next/previous-match navigation. Keep query-editing mode separate from browsing shortcuts.
 
-**Key Features**:
-- Toggle search with `/`
-- Navigate matches with n/N
-- Highlight matches in viewport
+**State and work:** Track retained content, query, current match, and follow-tail mode. Perform file reads and expensive searches asynchronously; bound content and reject stale search results.
 
-## Example 2: File Manager
+**Verify:** Empty logs, no matches, entering `q` in the search field, Unicode, resize, stream updates while scrolled away from the tail, and cancellation.
 
-**Requirements**: Three-column navigation, preview
-**Archetype**: File Manager
-**Components**:
-- list.Model (x2) - Parent + current directory
-- viewport.Model - File preview
-- filepicker.Model - Alternative approach
+## Three-Pane File Browser
 
-**Layout**: Horizontal three-pane
-**Complexity**: Medium-High
+**Reuse:** First evaluate `filepicker` for a simple chooser. For a requirement to show parent and current listings with metadata, compose `list` models with a `viewport` preview rather than rebuilding navigation and scrolling.
 
-## Example 3: Package Installer
+**Custom behavior:** Coordinate selected directory, pane focus, and preview loading. A file picker need not coexist with the lists when it offers no additional required capability.
 
-**Requirements**: Sequential installation with progress
-**Archetype**: Installer
-**Components**:
-- list.Model - Package list
-- progress.Model - Per-package progress
-- spinner.Model - Download indicator
+**State and work:** Cancel or ignore superseded preview requests, limit bytes read, and handle inaccessible paths and non-text files. Collapse the preview when terminal space is limited.
 
-**Pattern**: Progress Tracker
-**Workflow**: Queue-based sequential processing
+**Verify:** Empty directories, permission errors, rapid selection changes, long filenames, resize, and leaving while a read is pending.
 
-## Example 4: Configuration Wizard
+## Configuration Wizard
 
-**Requirements**: Multi-step form with validation
-**Archetype**: Form
-**Components**:
-- textinput.Model array - Multiple inputs
-- help.Model - Per-step help
-- progress/indicator - Step progress
+**Reuse:** `textinput` and `textarea` for actual fields, and `key`/`help` for available actions. Render a simple step label unless a richer indicator is needed.
 
-**Pattern**: Form Flow
-**Navigation**: Tab between fields, Enter to next step
+**Custom behavior:** Step transitions and domain validation. No extra text editor, tab framework, or progress model is required just to collect several values.
 
-## Example 5: Dashboard
+**State and work:** Preserve field values across back navigation, distinguish draft from committed configuration, and show save failures without losing input.
 
-**Requirements**: Multiple views, real-time updates
-**Archetype**: Dashboard
-**Components**:
-- tabs - View switching
-- table.Model - Data display
-- viewport.Model - Log panel
+**Verify:** Focus order, printable shortcut characters in fields, invalid submissions, back navigation, retry after save failure, and cancellation with unsaved changes.
 
-**Pattern**: Composable Views
-**Layout**: Tabbed with multiple panels per tab
+## Installation Queue
 
-## Component Selection Guide
+**Reuse:** A `list` if the user browses or selects jobs, `progress` for measurable work, and `spinner` only for periods without measurable completion. Prefer an existing component's status indicator when sufficient.
 
-| Use Case | Primary Component | Alternative | Supporting |
-|----------|------------------|-------------|-----------|
-| Log viewing | viewport | pager | textinput (search) |
-| File selection | filepicker | list | viewport (preview) |
-| Data table | table | list | paginator |
-| Text editing | textarea | textinput | viewport |
-| Progress | progress | spinner | - |
-| Multi-step | views | tabs | help |
-| Search/Filter | textinput | autocomplete | list |
+**Custom behavior:** Job execution, queue policy, domain status, and cancellation. Components display work state; they do not implement installation.
 
-## Complexity Matrix
+**State and work:** Run side effects in commands, bound parallelism, associate updates with job IDs, and make retry and cancellation semantics explicit. Preserve animation commands and finish with a clear outcome.
 
-| TUI Type | Components | Views | Estimated Time |
-|----------|-----------|-------|----------------|
-| Simple viewer | 1-2 | 1 | 1-2 hours |
-| File manager | 3-4 | 1 | 3-4 hours |
-| Installer | 3-4 | 3 | 2-3 hours |
-| Dashboard | 4-6 | 3+ | 4-6 hours |
-| Editor | 2-3 | 1-2 | 3-4 hours |
+**Verify:** Failure partway through a job, cancellation, completion messages after cancellation, queue advancement, animation lifecycle, and quit behavior during active work.
