@@ -65,6 +65,8 @@ const checks = {
 checks.mapfocus = checks.focus;
 const D = w.APPEDIA_DIFF;
 const routes = D ? ["review", "map", "files", ...D.files.map(f => "file-" + f.path)] : ["map", "rules", "tasks", "ref"];
+routes.push("dependencies");
+checks.dependencies = () => d.querySelector("#mode-dependencies h1") ? null : "no dependency page";
 const folded = new Set(M.folded || []);
 for (const id of new Set([...Object.keys(M.packages), ...Object.keys(C.packages || {})])) if (!folded.has(id)) routes.push("pkg-" + id);
 let nTypes = 0, nFns = 0;

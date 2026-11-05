@@ -40,6 +40,12 @@ the model: that goes in `content.js` (see `content-guide.md`).
 }
 ```
 
+The build also adds optional `dependencies` from `build.mjs --dependencies`:
+a package-manager snapshot with `checkedAt`, `scope`, `notes` and direct dependency
+rows (`used`, `latest`, `status`, import usage `paths`). See
+[dependencies.md](dependencies.md) for the schema and collection rules. Source
+extractors do not collect or query dependency versions.
+
 The build adds `folded`: the ids of packages it removed because they
 declared nothing (re-export barrels); their importers' `imports` were rewired
 to what they imported. Extractors keep emitting such packages as they are.

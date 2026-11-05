@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+* Added a Dependencies tab and package-manager-only direct dependency snapshots.
+  Unknown versions display `?`; no web lookup fallback. Appediff suggests updates
+  only for outdated dependencies imported in changed head package directories,
+  with source paths and an honest unknown-version state. Initial appedia builds
+  pass `--dependencies`; existing sites still open with an uncollected state.
+
 ## 0.2.0 — 2026-10-10
 
 * Appedia seeding accepts `--appedia <dir>`, selects flows using shared direct,

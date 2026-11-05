@@ -202,3 +202,12 @@ node scripts/selftest.mjs --jsdom /tmp/appedia-smoke      # must print "all chec
 * Never commit `node_modules/`, `__pycache__/`, built sites or extracted
   models.
 * Keep `SKILL.md` about using the skill. Maintenance knowledge goes here.
+
+## Dependency tab
+
+`dependencies` is a code-space route. `scripts/dependencies.py` collects a
+snapshot separately from source extraction; `build.mjs --dependencies` embeds
+it in `APPEDIA_MODEL.dependencies`. Keep both skills' collector and
+`tests/dependencies.py` / `tests/dependency-view.mjs` byte-identical, and run those tests plus both self-tests.
+See `references/dependencies.md` for the schema and usage scope. Latest-version
+queries must remain package-manager-only and fail to `?`, never web browsing.

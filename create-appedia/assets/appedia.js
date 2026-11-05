@@ -193,7 +193,7 @@
   let zoomOutFrom = null;
 
   /* ---------- router ---------- */
-  const modes = { explore: $("#mode-explore"), flows: $("#mode-flows"), rules: $("#mode-rules"), tasks: $("#mode-tasks"), ref: $("#mode-ref") };
+  const modes = { dependencies: $("#mode-dependencies"), explore: $("#mode-explore"), flows: $("#mode-flows"), rules: $("#mode-rules"), tasks: $("#mode-tasks"), ref: $("#mode-ref") };
   const firstFlow = C.flowGroups.length ? C.flowGroups[0].flows[0] : Object.keys(C.flows)[0];
   let lastExplore = "map", lastInfra = "infra/map", lastFlow = firstFlow ? "flow-" + firstFlow : "flow-";
   // point every space-dependent lookup at the code or the infrastructure
@@ -229,6 +229,7 @@
     else if (h.startsWith("flow-")) { lastFlow = h; setMode("flows"); renderFlows(h.slice(5)); }
     else if (h === "rules" || h.startsWith("rule-")) { setMode("rules"); renderRules(h.startsWith("rule-") ? h.slice(5) : null); }
     else if (h === "tasks") { setMode("tasks"); renderTasks(); }
+    else if (h === "dependencies") { setMode("dependencies"); renderDependencies(); }
     else if (h === "ref") { setMode("ref"); renderRef(); }
     else { lastExplore = "map"; setMode("explore"); renderExplore("map"); }
   }
@@ -1235,6 +1236,40 @@
     root.append(el("div", { class: "page" }, el("header", {}, el("div", {}, el("div", { class: "eyebrow", text: C.tasksSource || "Where to start" }), el("h1", { text: "I want to…" }), el("p", { text: "Where to start for the common kinds of change. Each chip opens the code." })), input), list));
     draw();
   }
+  function renderDependencies() {
+    const root = modes.dependencies;
+    root.replaceChildren();
+    const data = MODEL_CODE.dependencies;
+    const review = false;
+    const all = data ? data.dependencies : [];
+    const relevant = review ? all.filter(d => d.paths.length) : all;
+    const outdated = relevant.filter(d => d.status === "outdated");
+    const unknown = relevant.filter(d => d.status === "unknown");
+    const rows = review ? relevant.filter(d => d.status !== "current") : relevant;
+    let message = "Direct project dependencies and the latest versions reported by the package manager.";
+    if (!data) message = "Dependency information has not been collected. Latest versions: ?.";
+    else if (review && outdated.length) message = "Consider updating these outdated dependencies used in the changed paths. Check compatibility before updating.";
+    else if (review && unknown.length) message = "No confirmed outdated dependencies in the changed paths. Some versions are unknown (?).";
+    else if (review && !all.length && data.notes.length) message = "Dependency checks are incomplete. See the collection notes below.";
+    else if (review) message = "Dependencies are up to date in the changed paths.";
+    const table = el("table", { class: "dependency-table" },
+      el("thead", {}, el("tr", {}, ["Dependency", "Kind", "Version used", "Latest known", "Status", review ? "Used in changed paths" : "Manifest"].map(text => el("th", { scope: "col", text })))),
+      el("tbody", {}, rows.map(d => el("tr", {},
+        el("td", { text: d.name }), el("td", { text: d.kind }),
+        el("td", {}, el("code", { text: d.used }), d.used === "?" ? el("div", { class: "muted", text: "Declared: " + d.declared }) : null),
+        el("td", {}, el("code", { text: d.latest })),
+        el("td", { text: d.status === "outdated" ? "Update suggested" : d.status === "current" ? "Up to date" : "Unknown (?)" }),
+        el("td", {}, review ? el("details", {},
+          el("summary", { text: d.paths.length + (d.paths.length === 1 ? " source file" : " source files") }),
+          el("ul", {}, d.paths.map(path => el("li", {}, el("code", { text: path }))))) : d.manifest)))));
+    root.append(el("div", { class: "page" },
+      el("header", {}, el("div", {}, el("div", { class: "eyebrow", text: "Dependencies" }), el("h1", { text: review ? "Dependency updates" : "Direct dependencies" }), el("p", { text: message }))),
+      rows.length ? el("div", { class: "dependency-scroll", tabindex: "0", "aria-label": "Dependency versions" }, table) : null,
+      data && !all.length && !review ? el("p", { class: "muted", text: "No direct dependencies found in the supported manifests." }) : null,
+      data ? el("p", { class: "muted", text: "Checked " + data.checkedAt.slice(0, 10) + ". ? means unknown. Latest versions are a snapshot from package managers." }) : null,
+      ...(data ? data.notes : []).map(text => el("p", { class: "muted", text }))));
+  }
+
   function renderRef() {
     const root = modes.ref;
     if (root.dataset.built) return;
@@ -1256,7 +1291,7 @@
   /* =====================================================================
      SEARCH
      ===================================================================== */
-  const INDEX = [];
+  const INDEX = [{ kind: "page", title: "Dependencies", sub: "Direct dependency versions", route: "dependencies", hay: "dependencies versions updates outdated", w: 1 }];
   (function buildIndex() {
     for (const [id, c] of Object.entries(C.packages)) if (!(M.folded || []).includes(id)) INDEX.push({ kind: "package", title: c.label, sub: c.role, route: "pkg-" + id, hay: (c.label + " " + id + " " + c.role).toLowerCase(), w: 4 });
     for (const [id, p] of Object.entries(P)) {

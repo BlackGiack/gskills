@@ -27,6 +27,9 @@ const run = (cmd, argv, opts = {}) => spawnSync(cmd, argv, { encoding: "utf8", m
 let failures = 0;
 const fail = (what, detail) => { failures++; console.log(`  ✗ ${what}${detail ? "\n    " + String(detail).trim().split("\n").join("\n    ") : ""}`); };
 const ok = what => console.log(`  ✓ ${what}`);
+const dependencies = run("python3", [join(skill, "tests", "dependencies.py")]);
+if (dependencies.status === 0) ok("dependency collector tests"); else fail("dependency collector tests", dependencies.stderr || dependencies.stdout);
+
 const impact = run("node", [join(skill, "tests", "impact.mjs")]);
 if (impact.status === 0) ok("impact helpers: " + impact.stdout.trim()); else fail("impact helper tests", impact.stderr || impact.stdout);
 const git = (repo, ...a) => run("git", ["-C", repo, "-c", "user.email=selftest@example.com", "-c", "user.name=selftest", ...a]);
@@ -74,6 +77,8 @@ function compare(dir, want, filesExact) {
   if (diffs.length) fail("change marks match tests/expected.json", diffs.join("\n")); else if (failures === before) ok("change marks match tests/expected.json");
 }
 function smoke(dir) {
+  const dependencyView = run("node", [join(skill, "tests", "dependency-view.mjs"), dir, args.jsdom]);
+  if (dependencyView.status !== 0) fail("dependency view", dependencyView.stderr || dependencyView.stdout); else ok(dependencyView.stdout.trim());
   const s = run("node", [join(skill, "scripts", "smoke.mjs"), "--site", dir, "--jsdom", args.jsdom]);
   const out = (s.stdout || "").trim();
   if (s.status !== 0) fail("smoke", out || s.stderr); else ok("smoke: " + out.split("\n").join(" · "));

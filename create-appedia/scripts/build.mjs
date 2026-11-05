@@ -25,9 +25,11 @@ vm.runInNewContext(readFileSync(args.content, "utf8"), ctx);
 const content = ctx.window.APPEDIA_CONTENT;
 const out = args.out;
 const assets = args.assets || join(dirname(fileURLToPath(import.meta.url)), "..", "assets");
-if (!args.model || !args.content || !out) { console.error("usage: node build.mjs --model model.json --content content.js --out dir [--infra-model infra.json] [--assets dir]"); process.exit(2); }
+if (!args.model || !args.content || !out) { console.error("usage: node build.mjs --model model.json --content content.js --out dir [--infra-model infra.json] [--dependencies dependencies.json] [--assets dir]"); process.exit(2); }
 const infraModel = args["infra-model"] ? JSON.parse(readFileSync(args["infra-model"], "utf8")) : null;
 const infraContent = content.infra || {};
+const dependencies = args.dependencies ? JSON.parse(readFileSync(args.dependencies, "utf8")) : model.dependencies || null;
+
 const sourceModel = structuredClone(model), sourceInfraModel = infraModel ? structuredClone(infraModel) : null;
 
 /* ---------- fold away packages that declare nothing ----------
@@ -68,6 +70,17 @@ mkdirSync(join(out, "data"), { recursive: true });
 /* ---------- validation ---------- */
 const EXTERNAL = new Set(Object.keys(content.externals || {}));
 const errors = [];
+if (dependencies) {
+  if (!Array.isArray(dependencies.dependencies) || !Array.isArray(dependencies.notes) ||
+      !dependencies.notes.every(n => typeof n === "string") || typeof dependencies.checkedAt !== "string" ||
+      !["project", "changed"].includes(dependencies.scope)) errors.push("invalid dependency snapshot: expected checkedAt, scope, notes and dependencies");
+  else for (const d of dependencies.dependencies) {
+    if (!d || !["name", "kind", "manifest", "declared", "used", "latest"].every(k => typeof d[k] === "string") ||
+        !["current", "outdated", "unknown"].includes(d.status) || !Array.isArray(d.paths) ||
+        !d.paths.every(p => typeof p === "string") ||
+        (d.status !== "unknown" && (d.used === "?" || d.latest === "?"))) errors.push("invalid dependency row: versions, status and usage paths required");
+  }
+}
 for (const id of Object.keys(model.packages)) if (!/^[A-Za-z0-9_~-]+$/.test(id)) errors.push(`package id "${id}" may only use letters, digits, _ ~ - (it is used in URLs)`);
 function resolve(ref) {
   // "pkg", "pkg.Type", "pkg.Type.Method", "pkg.Func"
@@ -335,7 +348,7 @@ function autoMapFor(m, mapContent, pkgContent) {
 const autoMap = autoMapFor(model, content.map, content.packages);
 
 /* ---------- write ---------- */
-const packed = { ...model, folded, layouts, flowLayouts, autoMap, builtAt: new Date().toISOString() };
+const packed = { ...model, dependencies, folded, layouts, flowLayouts, autoMap, builtAt: new Date().toISOString() };
 writeFileSync(join(out, "data", "model.js"), "window.APPEDIA_MODEL = " + JSON.stringify(packed) + ";\n");
 let infraDiagrams = 0;
 if (infraModel) {

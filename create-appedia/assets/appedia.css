@@ -309,9 +309,22 @@ pre.tree .c { color: var(--muted); }
   .levels { display: none; }
 }
 @media (max-width: 560px) {
+  .modes { max-width: 100%; flex-wrap: wrap; }
   .modes button { padding: 5px 7px; font-size: 0.82rem; }
   .files li { grid-template-columns: minmax(0, 1fr) 3em; }
   .files li span:last-child { grid-column: 1 / -1; }
   .stepcard { grid-template-columns: minmax(0, 1fr); }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+/* Dependency versions stay readable on narrow screens via a locally scrolling table. */
+.dependency-scroll { overflow-x: auto; margin-bottom: 20px; }
+.dependency-table { width: 100%; border-collapse: collapse; text-align: left; }
+.dependency-table th, .dependency-table td { padding: 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.dependency-table th { color: var(--muted); font-size: 0.85rem; }
+.dependency-table td { overflow-wrap: anywhere; min-width: 100px; }
+
+.dependency-table th:first-child, .dependency-table td:first-child { min-width: 220px; }
+.dependency-table td:nth-child(3), .dependency-table td:nth-child(4) { white-space: nowrap; }
+.dependency-table summary { cursor: pointer; }
+.dependency-table ul { padding-left: 20px; margin: 8px 0; }

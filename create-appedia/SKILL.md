@@ -46,8 +46,29 @@ The model is cheap and mechanical. **The value is in `content.js`,
 especially the flows.** Spend your effort there (see
 `references/content-guide.md`).
 
+## Dependencies
+
+The **Dependencies** tab lists direct dependencies only (runtime, development,
+optional and peer declarations), their resolved version used and latest known
+version. A declared range is shown separately when the resolved version is
+unknown. Latest means the package manager's default release at collection time;
+it does not guarantee compatibility with the project.
+When collecting a snapshot, **query the language's package manager for the
+latest available release**, separately from determining the version currently
+used. Never fill the latest-version column from the agent's training knowledge,
+memory, or the project's installed/locked version alone. If the query cannot
+establish the latest available release, use `?`.
+
+Use `scripts/dependencies.py` and read [references/dependencies.md](references/dependencies.md)
+for supported manifests, package manager commands and usage matching. **Never
+browse the internet, use a web search, or query registry HTTP APIs to fill in
+versions.** Use the language's package manager; if it is missing, fails, times
+out or cannot establish a version, keep `?`. Do not install or update project
+dependencies to collect this information.
+
 ## Requirements
 
+* Python 3.9+ for dependency collection (3.11+ to read TOML manifests/locks).
 * Node 18+ and Graphviz (`dot` and `unflatten` on PATH) for the build.
 * The extractor for the project's language:
 
@@ -129,11 +150,19 @@ Several root modules (one per environment or stack): pick the one that is
 deployed, or run one appedia per stack. Modules from other repositories show
 as a box with their `source`.
 
+Collect dependencies before the first build (latest lookups use only package
+managers; `--offline` leaves them `?`):
+```bash
+python3 <skill>/scripts/dependencies.py --root <repo> --lang go|python|ts --out /tmp/<app>-dependencies.json [--exclude gen,mocks]
+```
+Inspect declarations and import usage against the project. For unsupported
+manifests or import aliases, follow the dependency reference; preserve unknowns.
+
 **4. First build with an empty content file**, to see the raw site:
 ```bash
 mkdir -p <repo>/appedia/data
 cp <skill>/assets/content.template.js <repo>/appedia/data/content.js   # set app, title, language
-node <skill>/scripts/build.mjs --model /tmp/<app>-model.json --content <repo>/appedia/data/content.js --out <repo>/appedia
+node <skill>/scripts/build.mjs --model /tmp/<app>-model.json --dependencies /tmp/<app>-dependencies.json --content <repo>/appedia/data/content.js --out <repo>/appedia
 ```
 
 **5. Write `content.js`**, in this order, rebuilding after each step:
@@ -156,7 +185,7 @@ node <skill>/scripts/build.mjs --model /tmp/<app>-model.json --content <repo>/ap
 function that doesn't exist, and prints each one. Fix the name: never drop a
 step to make the build pass.
 ```bash
-node <skill>/scripts/build.mjs --model /tmp/<app>-model.json [--infra-model /tmp/<app>-infra.json] --content <repo>/appedia/data/content.js --out <repo>/appedia
+node <skill>/scripts/build.mjs --model /tmp/<app>-model.json [--infra-model /tmp/<app>-infra.json] --dependencies /tmp/<app>-dependencies.json --content <repo>/appedia/data/content.js --out <repo>/appedia
 npm install --prefix /tmp/appedia-smoke jsdom@24   # once
 node <skill>/scripts/smoke.mjs --site <repo>/appedia --jsdom /tmp/appedia-smoke
 ```
@@ -182,6 +211,9 @@ node <skill>/scripts/appedia.mjs --action prepare --repo <repo> --lang go [--src
 node <skill>/scripts/appedia.mjs --action rebuild --repo <repo>
 node <skill>/scripts/appedia.mjs --action finalize --repo <repo> --jsdom /tmp/appedia-smoke
 ```
+
+Prepare also collects a fresh dependency snapshot; rebuild/finalize reuse it,
+while refresh-renderer preserves the existing snapshot.
 
 Use the same extraction settings on each update; they are saved with the
 accepted baseline. For a legacy appedia, pass `--exclude` explicitly (even

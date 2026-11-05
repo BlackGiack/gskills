@@ -2,7 +2,8 @@
 
 An interactive map of this codebase: packages, class diagrams, the real code,
 sequence-diagram flows, the rules the code relies on, and where to start for
-common changes.
+common changes. The Dependencies tab records direct versions and latest releases
+reported by package managers; `?` means unknown. These are build-time snapshots.
 
 **Open `index.html` in a browser.** No server needed. Without network access
 the page still works; it falls back to system fonts.
@@ -24,7 +25,8 @@ From the repository root (`<skill>` is where the create-appedia skill lives):
 # uv run --python 3.13 --no-project python <skill>/scripts/extract-python/extract.py --root . --out /tmp/<app>-model.json
 # With an Infrastructure tab, also:
 # python3 <skill>/scripts/extract-terraform/extract.py --root <terraform dir> --out /tmp/<app>-infra.json
-node <skill>/scripts/build.mjs --model /tmp/<app>-model.json [--infra-model /tmp/<app>-infra.json] --content appedia/data/content.js --out appedia
+python3 <skill>/scripts/dependencies.py --root . --lang <go|python|ts> --out /tmp/<app>-dependencies.json
+node <skill>/scripts/build.mjs --dependencies /tmp/<app>-dependencies.json --model /tmp/<app>-model.json [--infra-model /tmp/<app>-infra.json] --content appedia/data/content.js --out appedia
 ```
 
 The build fails if `content.js` names a type, method or function that no

@@ -117,3 +117,12 @@ smoke-tests the sites, and checks seeding and the review-link validation.
 * Never commit `node_modules/`, `__pycache__/`, built sites or `.work/`.
 * `SKILL.md` is about using the skill; maintenance knowledge goes here.
 * Note every change in `CHANGELOG.md`.
+
+## Dependency tab
+
+`dependencies` is a code-space route. `scripts/dependencies.py` collects a
+snapshot separately from source extraction; `build.mjs --dependencies` embeds
+it in `APPEDIA_MODEL.dependencies`. Keep both skills' collector and
+`tests/dependencies.py` / `tests/dependency-view.mjs` byte-identical, and run those tests plus both self-tests.
+See `references/dependencies.md` for the schema and usage scope. Latest-version
+queries must remain package-manager-only and fail to `?`, never web browsing.

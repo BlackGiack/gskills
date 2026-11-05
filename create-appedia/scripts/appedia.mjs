@@ -60,7 +60,7 @@ function toolchain(config) {
   return t;
 }
 function toolsFingerprint(config) {
-  const files = ["build.mjs", "impact.mjs", "appedia.mjs", config.language === "go" ? "extract-go/main.go" : config.language === "python" ? "extract-python/extract.py" : "extract-ts/extract.mjs"];
+  const files = ["build.mjs", "impact.mjs", "appedia.mjs", "dependencies.py", config.language === "go" ? "extract-go/main.go" : config.language === "python" ? "extract-python/extract.py" : "extract-ts/extract.mjs"];
   if (config.infra) files.push("extract-terraform/extract.py");
   return sha(JSON.stringify(files.map(f => [f, sha(readFileSync(join(skill, f)))])));
 }
@@ -75,6 +75,7 @@ function extract(config) {
     let py = config.python ? config.python.split(/\s+/) : ["python3"];
     run(py[0], [...py.slice(1), join(skill, "extract-python", "extract.py"), ...rootArgs, ...srcArgs, "--out", codeOut, ...excludeArgs]);
   }
+  run("python3", [join(skill, "dependencies.py"), "--root", repo, "--lang", config.language, "--out", join(pending, "dependencies.json"), "--exclude", config.exclude || ""]);
   if (config.infra) run("python3", [join(skill, "extract-terraform", "extract.py"), "--root", resolve(repo, config.infra), "--out", join(pending, "infra.json")]);
   else rmSync(join(pending, "infra.json"), { force: true });
 }
@@ -90,6 +91,7 @@ function writeReport(report) {
 function build() {
   const { code, infra } = loadModels();
   const argv = [join(skill, "build.mjs"), "--model", join(pending, "model.json"), "--content", contentPath, "--out", out];
+  if (existsSync(join(pending, "dependencies.json"))) argv.push("--dependencies", join(pending, "dependencies.json"));
   if (infra) argv.push("--infra-model", join(pending, "infra.json"));
   run("node", argv);
   const content = readContent(contentPath);

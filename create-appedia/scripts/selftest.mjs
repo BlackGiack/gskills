@@ -53,6 +53,9 @@ let failures = 0;
 const fail = (what, detail) => { failures++; console.log(`  ✗ ${what}${detail ? "\n    " + detail.split("\n").join("\n    ") : ""}`); };
 const ok = what => console.log(`  ✓ ${what}`);
 
+const dependencies = run("python3", [join(skill, "tests", "dependencies.py")]);
+if (dependencies.status === 0) ok("dependency collector tests"); else fail("dependency collector tests", dependencies.stderr || dependencies.stdout);
+
 const impact = run("node", [join(skill, "tests", "impact.mjs")]);
 if (impact.status === 0) ok("impact helpers: " + impact.stdout.trim()); else fail("impact helper tests", impact.stderr || impact.stdout);
 const bundleCheck = run("node", [join(skill, "scripts", "check-bundles.mjs")]);
@@ -87,6 +90,8 @@ for (const [lang, extract] of Object.entries(LANGS)) {
   const b = run("node", [join(skill, "scripts", "build.mjs"), ...models, "--content", join(site, "data", "content.js"), "--out", site]);
   if (b.status !== 0) { fail("build", (b.stderr || b.stdout).trim()); continue; }
   ok("build: " + b.stdout.trim().split("\n").pop());
+  const dependencyView = run("node", [join(skill, "tests", "dependency-view.mjs"), site, args.jsdom]);
+  if (dependencyView.status !== 0) fail("dependency view", dependencyView.stderr || dependencyView.stdout); else ok(dependencyView.stdout.trim());
   // python: orders/public only re-exports; the build folds it into its importer (cli -> orders)
   if (lang === "python") {
     const built = JSON.parse(readFileSync(join(site, "data", "model.js"), "utf8").replace(/^window\.APPEDIA_MODEL = /, "").replace(/;\s*$/, ""));

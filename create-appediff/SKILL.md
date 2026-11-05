@@ -36,8 +36,32 @@ Inputs, one build:
 
 The mechanics are one command. **The value is in the review and the flows.**
 
+## Dependencies
+
+The **Dependencies** tab suggests updates for confirmed outdated direct
+dependencies used in the changed paths, with version used, latest known version
+and the source paths proving usage. It uses the head revision, including WORKTREE.
+When none are outdated, show “Dependencies are up to date in the changed paths.”
+If relevant versions are unknown, show them as `?` and qualify the message rather
+than claiming they are current. A declared range is shown separately when the
+resolved version is unknown. Latest means the package manager's default release at collection time;
+it does not guarantee compatibility with the project.
+When collecting a snapshot, **query the language's package manager for the
+latest available release**, separately from determining the version currently
+used. Never fill the latest-version column from the agent's training knowledge,
+memory, or the project's installed/locked version alone. If the query cannot
+establish the latest available release, use `?`.
+
+Use `scripts/dependencies.py` and read [references/dependencies.md](references/dependencies.md)
+for supported manifests, package manager commands and usage matching. **Never
+browse the internet, use a web search, or query registry HTTP APIs to fill in
+versions.** Use the language's package manager; if it is missing, fails, times
+out or cannot establish a version, keep `?`. Do not install or update project
+dependencies to collect this information.
+
 ## Requirements
 
+* Python 3.9+ for dependency collection (3.11+ to read TOML manifests/locks).
 * git, Node 18+, Graphviz (`dot` and `unflatten` on PATH).
 * The extractor's toolchain: Go 1.22+ for Go; Python 3.9+ for Python (with
   `uv` on PATH the extractor runs on Python 3.13, so it parses recent syntax);
@@ -67,7 +91,8 @@ node <skill>/scripts/appediff.mjs --repo <repo> --lang python|go|ts \
   [--base <rev>] [--head <rev>|WORKTREE] [--infra <terraform dir>] [--src src] [--exclude gen,mocks] [--appedia <dir>]
 ```
 It writes `<repo>/tmp/appediff/` (creating `tmp/`), keeps the extracted models
-in `tmp/appediff/.work/`, and writes a first `data/content.js`:
+in `tmp/appediff/.work/`, collects head dependencies and their usage in the
+changed package directories into `.work/dependencies.json`, and writes a first `data/content.js`:
 * **The repo has an appedia** (`<repo>/appedia/data/content.js`, or `--appedia`): the content
   is seeded from it: package entries, map, outside systems, the infrastructure
   section and the flows the change touches. Flow selection uses direct refs,
@@ -96,6 +121,10 @@ after each step with `--rebuild` (no re-extraction):
 ```bash
 node <skill>/scripts/appediff.mjs --repo <repo> --lang <lang> [--infra <dir>] --rebuild
 ```
+Review `.work/dependencies.json` against head manifests and imports; correct
+unsupported import mappings with code evidence as described in the dependency
+reference. `--rebuild` reuses this snapshot and does not query registries again.
+
 1. `packages`: label, sub and role for **every** package (the build checks it);
    the touched ones from their head code. Same for `infra.packages` areas.
 2. `map`: positions by hand for a small repo, or leave `nodes` out for the

@@ -3,6 +3,14 @@
 Newest first. Note anything that changes the content format or the commands
 people run, and how to migrate (see CONTRIBUTING.md, constraint 12).
 
+## Unreleased
+
+* Added a Dependencies tab and package-manager-only direct dependency snapshots.
+  Unknown versions display `?`; no web lookup fallback. Appediff suggests updates
+  only for outdated dependencies imported in changed head package directories,
+  with source paths and an honest unknown-version state. Initial appedia builds
+  pass `--dependencies`; existing sites still open with an uncollected state.
+
 ## 0.5.0 — 2026-10-13
 
 * Added optional `map.toggles` (also `infra.map.toggles`): `[{ label, packages,

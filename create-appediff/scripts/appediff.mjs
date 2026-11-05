@@ -89,6 +89,8 @@ function extract(dir, outFile) {
 const EMPTY_INFRA = { language: "hcl", module: "", packages: {}, relations: [], dataflow: [], usedBy: {} };
 if (!args.rebuild) {
   mkdirSync(work, { recursive: true });
+  // Changed files also scope dependency usage in the head checkout.
+  say(run("node", [join(skill, "scripts", "files.mjs"), "--repo", repo, "--base", base, "--head", head, "--out", join(work, "files.json"), ...(outRel && !outRel.startsWith("..") ? ["--ignore", outRel] : [])]));
   for (const [side, rev] of [["base", base], ["head", head]]) {
     const dir = join(work, side);
     checkout(rev, dir);
@@ -102,13 +104,12 @@ if (!args.rebuild) {
       if (has) say(run("python3", [join(skill, "scripts", "extract-terraform", "extract.py"), "--root", tf, "--out", join(work, side + "-infra.json")]));
       else { writeFileSync(join(work, side + "-infra.json"), JSON.stringify(EMPTY_INFRA)); console.log(`${side}: no .tf files in ${args.infra}, empty infrastructure`); }
     }
+    if (side === "head") say(run("python3", [join(skill, "scripts", "dependencies.py"), "--root", dir, "--lang", args.lang, "--files", join(work, "files.json"), "--out", join(work, "dependencies.json"), "--exclude", typeof args.exclude === "string" ? args.exclude : ""]));
     rmSync(dir, { recursive: true, force: true });
   }
   say(run("node", [join(skill, "scripts", "merge.mjs"), "--base", join(work, "base-model.json"), "--head", join(work, "head-model.json"), "--out", join(work, "model.json")]));
   if (typeof args.infra === "string") say(run("node", [join(skill, "scripts", "merge.mjs"), "--base", join(work, "base-infra.json"), "--head", join(work, "head-infra.json"), "--out", join(work, "infra.json")]));
   else rmSync(join(work, "infra.json"), { force: true });
-  /* ---------- 2. changed files ---------- */
-  say(run("node", [join(skill, "scripts", "files.mjs"), "--repo", repo, "--base", base, "--head", head, "--out", join(work, "files.json"), ...(outRel && !outRel.startsWith("..") ? ["--ignore", outRel] : [])]));
 }
 if (!existsSync(join(work, "model.json"))) fail(`nothing to rebuild in ${work}: run without --rebuild first`);
 const hasInfra = existsSync(join(work, "infra.json"));
@@ -184,7 +185,7 @@ window.APPEDIA_CONTENT = ${JSON.stringify(c, null, 2)};
 }
 
 /* ---------- 4. build ---------- */
-const r = spawnSync("node", [join(skill, "scripts", "build.mjs"), "--model", join(work, "model.json"), ...(hasInfra ? ["--infra-model", join(work, "infra.json")] : []), "--files", join(work, "files.json"), "--content", contentPath, "--out", out], { encoding: "utf8" });
+const r = spawnSync("node", [join(skill, "scripts", "build.mjs"), "--model", join(work, "model.json"), ...(hasInfra ? ["--infra-model", join(work, "infra.json")] : []), "--files", join(work, "files.json"), ...(existsSync(join(work, "dependencies.json")) ? ["--dependencies", join(work, "dependencies.json")] : []), "--content", contentPath, "--out", out], { encoding: "utf8" });
 process.stdout.write(r.stdout || "");
 process.stderr.write(r.stderr || "");
 if (r.status !== 0) { console.error(`\nThe build stopped on the problems above: fix ${contentPath} and run again with --rebuild.`); process.exit(r.status); }
