@@ -102,6 +102,20 @@ export function makeIndex(content, model, infra = null) {
     const [, body = ""] = local.match(/^(?:pkg-|mapfocus-|focus-|type-|fn-)(.*)$/) || [];
     if (body) add("path", String(i + 1), { ref: isInfra ? `infra:${body}` : body });
   }
+  const evidenceById = new Map((content.tests?.evidence || []).map(e => [e.id, e]));
+  const captureById = new Map((content.tests?.captures || []).map(c => [c.id, c]));
+  for (const feature of content.tests?.features || []) {
+    const featureFiles = new Set(feature.sources?.files || []);
+    for (const scenario of feature.scenarios || []) {
+      const files = new Set([...(scenario.sources?.files || []), ...(feature.sources?.files || [])]);
+      for (const id of scenario.evidence || []) { const e = evidenceById.get(id); if (e?.file) files.add(e.file); if (e?.base?.file) files.add(e.base.file); }
+      for (const id of scenario.captures || []) { const c = captureById.get(id); if (c?.file) files.add(c.file); }
+      for (const id of scenario.flows || []) for (const file of items.find(i => i.kind === "flow" && i.id === id)?.files || []) files.add(file);
+      for (const file of files) featureFiles.add(file);
+      add("test-scenario", feature.id + "/" + scenario.id, { ...scenario, sources: { refs: [...(feature.sources?.refs || []), ...(scenario.sources?.refs || [])], files: [...files] } });
+    }
+    add("test-feature", feature.id, { ...feature, sources: { ...(feature.sources || {}), files: [...featureFiles] } });
+  }
   return { version: 1, items: items.sort((a, b) => `${a.kind}:${a.id}`.localeCompare(`${b.kind}:${b.id}`)), digest: sha(JSON.stringify(items)) };
 }
 

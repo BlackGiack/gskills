@@ -56,6 +56,11 @@ const ok = what => console.log(`  ✓ ${what}`);
 const dependencies = run("python3", [join(skill, "tests", "dependencies.py")]);
 if (dependencies.status === 0) ok("dependency collector tests"); else fail("dependency collector tests", dependencies.stderr || dependencies.stdout);
 
+for (const [command, file] of [["node", "testing.mjs"], ["python3", "test-evidence.py"]]) {
+  const result = run(command, [join(skill, "tests", file)]);
+  if (result.status === 0) ok(file + " passed"); else fail(file, result.stderr || result.stdout);
+}
+
 const impact = run("node", [join(skill, "tests", "impact.mjs")]);
 if (impact.status === 0) ok("impact helpers: " + impact.stdout.trim()); else fail("impact helper tests", impact.stderr || impact.stdout);
 const bundleCheck = run("node", [join(skill, "scripts", "check-bundles.mjs")]);
@@ -144,6 +149,10 @@ console.log("\nvalidation");
 }
 
 if (args["update-expected"]) writeFileSync(expectedPath, JSON.stringify(expected, null, 2) + "\n");
+const testingSite = join(work, "go-site");
+const testingView = run("node", [join(skill, "tests", "testing-view.mjs"), testingSite, args.jsdom]);
+if (testingView.status === 0) ok(testingView.stdout.trim()); else fail("Tests view", testingView.stderr || testingView.stdout);
+
 rmSync(work, { recursive: true, force: true });
 console.log(failures ? `\n${failures} failure(s)` : "\nall checks passed");
 process.exit(failures ? 1 : 0);

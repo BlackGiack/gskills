@@ -149,3 +149,15 @@ a change to one method marks the type `changed` too.
 
 `files.mjs` writes `data/diff.js` (`window.APPEDIA_DIFF`):
 `{ base, head, subject, files: [{ path, old, status: A|D|M|R, adds, dels, binary, hunks: [{ h, o, n, lines }] }] }`.
+
+## Compiled test assessments
+
+The build adds optional `testing` to the browser model: normalized `features`,
+`evidence`, `captures`, `coverage`, endpoint metadata and collection date. Raw
+inventory is retained in `data/test-evidence.json`, outside the production-code
+model. See [testing.md](testing.md) for the authored and snapshot formats.
+
+Managed extraction pipelines also attach `testFingerprints` to bind collected
+source state to this model (`head`, and `base` on a merged diff model). An unbound
+legacy model cannot establish coverage-profile provenance. This metadata does
+not alter symbol extraction or imply functional test coverage.

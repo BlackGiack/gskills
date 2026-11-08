@@ -124,6 +124,8 @@ for (const [pid, p] of Object.entries(out.packages)) for (const sec of SECS) for
   if (s.ch === "removed") { const to = movedTo.get(pid + "|" + sec + "|" + k); if (to) { s.movedTo = to; s.ch = "moved"; } }
 }
 
+if (base.testFingerprints || head.testFingerprints) out.testFingerprints = { base: base.testFingerprints?.head, head: head.testFingerprints?.head };
+
 /* ---------- relations and data flow ---------- */
 function unionEdges(eb, eh, key) {
   const kb = new Map(eb.map(e => [key(e), e])), kh = new Map(eh.map(e => [key(e), e]));

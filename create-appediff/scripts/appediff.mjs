@@ -17,6 +17,7 @@
 // --rebuild skips 1-3 and rebuilds from <out>/.work: use it while writing content.js.
 // --base defaults to the merge-base of HEAD with the default branch; --head to HEAD.
 import { execFileSync, spawnSync } from "node:child_process";
+import { seedTesting } from "./testing.mjs";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync, copyFileSync, readdirSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -105,8 +106,15 @@ if (!args.rebuild) {
       else { writeFileSync(join(work, side + "-infra.json"), JSON.stringify(EMPTY_INFRA)); console.log(`${side}: no .tf files in ${args.infra}, empty infrastructure`); }
     }
     if (side === "head") say(run("python3", [join(skill, "scripts", "dependencies.py"), "--root", dir, "--lang", args.lang, "--files", join(work, "files.json"), "--out", join(work, "dependencies.json"), "--exclude", typeof args.exclude === "string" ? args.exclude : ""]));
+    say(run("python3", [join(skill, "scripts", "test-evidence.py"), "--root", dir, "--revision", rev === "WORKTREE" ? "WORKTREE" : git("rev-parse", rev), "--out", join(work, side + "-test-evidence.json"), "--exclude", typeof args.exclude === "string" ? args.exclude : ""]));
+    const extracted = JSON.parse(readFileSync(join(work, side + "-model.json"), "utf8"));
+    extracted.testFingerprints = { head: JSON.parse(readFileSync(join(work, side + "-test-evidence.json"), "utf8")).head.fingerprint };
+    writeFileSync(join(work, side + "-model.json"), JSON.stringify(extracted));
     rmSync(dir, { recursive: true, force: true });
   }
+  const testBase = JSON.parse(readFileSync(join(work, "base-test-evidence.json"), "utf8"));
+  const testHead = JSON.parse(readFileSync(join(work, "head-test-evidence.json"), "utf8"));
+  writeFileSync(join(work, "test-evidence.json"), JSON.stringify({ version: 1, collectedAt: testHead.collectedAt, base: testBase.head, head: testHead.head, coverage: {} }));
   say(run("node", [join(skill, "scripts", "merge.mjs"), "--base", join(work, "base-model.json"), "--head", join(work, "head-model.json"), "--out", join(work, "model.json")]));
   if (typeof args.infra === "string") say(run("node", [join(skill, "scripts", "merge.mjs"), "--base", join(work, "base-infra.json"), "--head", join(work, "head-infra.json"), "--out", join(work, "infra.json")]));
   else rmSync(join(work, "infra.json"), { force: true });
@@ -169,13 +177,15 @@ function seedFromAppedia(path, model, infra, files, template, provenance) {
     return !!item && (item.refs.some(ref => [...changes].some(ch => ch === ref || ch.startsWith(ref + "."))) || item.files.some(file => changedFiles.has(file)));
   };
   const flows = Object.fromEntries(Object.entries(a.flows || {}).filter(([id]) => touched(id)));
+  const tests = seedTesting(a.tests, flows, [...changedFiles], [...changes]);
+  for (const f of tests?.features || []) for (const scenario of f.scenarios || []) for (const id of scenario.flows || []) if (a.flows?.[id]) flows[id] = a.flows[id];
   const packages = JSON.parse(JSON.stringify(a.packages || {}));
   for (const p of Object.values(packages)) p.rules = [];
   const c = {
     app: a.app, title: `${a.app} · ${files.subject}`, language: a.language || model.language,
     externals: a.externals, flowKinds: a.flowKinds, packages, map: a.map,
     flowGroups: (a.flowGroups || []).map(g => ({ ...g, flows: g.flows.filter(id => flows[id]) })).filter(g => g.flows.length),
-    flows, review, infra: infra ? a.infra : undefined, seedProvenance: provenance
+    flows, tests, review, infra: infra ? a.infra : undefined, seedProvenance: provenance
   };
   return `/* appediff content: the one file to edit (see the create-appediff skill's references/content-guide.md).
  * Seeded from ${path}: packages, map, outside systems${infra ? ", infrastructure" : ""} and the ${Object.keys(flows).length} flow(s)
@@ -185,7 +195,7 @@ window.APPEDIA_CONTENT = ${JSON.stringify(c, null, 2)};
 }
 
 /* ---------- 4. build ---------- */
-const r = spawnSync("node", [join(skill, "scripts", "build.mjs"), "--model", join(work, "model.json"), ...(hasInfra ? ["--infra-model", join(work, "infra.json")] : []), "--files", join(work, "files.json"), ...(existsSync(join(work, "dependencies.json")) ? ["--dependencies", join(work, "dependencies.json")] : []), "--content", contentPath, "--out", out], { encoding: "utf8" });
+const r = spawnSync("node", [join(skill, "scripts", "build.mjs"), "--model", join(work, "model.json"), ...(hasInfra ? ["--infra-model", join(work, "infra.json")] : []), "--files", join(work, "files.json"), ...(existsSync(join(work, "dependencies.json")) ? ["--dependencies", join(work, "dependencies.json")] : []), ...(args["test-evidence"] ? ["--test-evidence", args["test-evidence"]] : existsSync(join(work, "test-evidence.json")) ? ["--test-evidence", join(work, "test-evidence.json")] : []), "--content", contentPath, "--out", out], { encoding: "utf8" });
 process.stdout.write(r.stdout || "");
 process.stderr.write(r.stderr || "");
 if (r.status !== 0) { console.error(`\nThe build stopped on the problems above: fix ${contentPath} and run again with --rebuild.`); process.exit(r.status); }

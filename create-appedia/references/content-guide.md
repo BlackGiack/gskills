@@ -326,3 +326,9 @@ edit content.js → node build.mjs … → fix every "unknown reference" → smo
 
 An unknown reference means a typo or a guess. Look the name up in `model.json`
 (or open the type in the built page) and fix it. Don't delete the step.
+
+## Tests
+
+For the optional `tests` section, paired test sources, UI evidence, flow links,
+refresh behavior and code coverage, read [testing.md](testing.md). Assertions and
+recorded observations establish scenario support independently of test-file marks.

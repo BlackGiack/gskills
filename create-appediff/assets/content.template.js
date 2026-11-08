@@ -40,6 +40,9 @@ window.APPEDIA_CONTENT = {
   /* the flows the change touches, old and new steps together in execution order. A step is
      [from, to, kind, label, note, "pkg.ref", mark]: mark "+" new call, "-" dropped call, "~" changed
      call, "" unchanged; leave it out to derive it from the code (a new or dropped ref). */
+  // Feature/scenario assessments and evidence are authored here; see references/testing.md.
+  tests: { scope: "", features: [], evidence: [], captures: [] },
+
   flowGroups: [
     // { name: "Orders", flows: ["place"] }
   ],

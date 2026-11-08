@@ -17,7 +17,7 @@ const run = (cmd, argv, opts = {}) => {
   if (r.status !== 0) fail(`${cmd} ${argv.join(" ")} failed:\n${r.stderr || r.stdout}`);
   return r.stdout || "";
 };
-if (!["prepare", "rebuild", "finalize", "refresh-renderer"].includes(args.action)) fail("usage: node appedia.mjs --action prepare|rebuild|finalize|refresh-renderer --repo <repo> [--out <appedia>] [--lang go|python|ts] [--src dir] [--exclude a,b] [--python command] [--infra dir] [--jsdom dir]");
+if (!["prepare", "rebuild", "finalize", "refresh-renderer"].includes(args.action)) fail("usage: node appedia.mjs --action prepare|rebuild|finalize|refresh-renderer --repo <repo> [--out <appedia>] [--lang go|python|ts] [--src dir] [--exclude a,b] [--python command] [--infra dir] [--test-evidence tests.json] [--jsdom dir]");
 
 function loadJs(path, key) {
   const ctx = { window: {} }; vm.runInNewContext(readFileSync(path, "utf8"), ctx, { timeout: 1000 });
@@ -60,7 +60,7 @@ function toolchain(config) {
   return t;
 }
 function toolsFingerprint(config) {
-  const files = ["build.mjs", "impact.mjs", "appedia.mjs", "dependencies.py", config.language === "go" ? "extract-go/main.go" : config.language === "python" ? "extract-python/extract.py" : "extract-ts/extract.mjs"];
+  const files = ["build.mjs", "impact.mjs", "appedia.mjs", "dependencies.py", "testing.mjs", "test-evidence.py", config.language === "go" ? "extract-go/main.go" : config.language === "python" ? "extract-python/extract.py" : "extract-ts/extract.mjs"];
   if (config.infra) files.push("extract-terraform/extract.py");
   return sha(JSON.stringify(files.map(f => [f, sha(readFileSync(join(skill, f)))])));
 }
@@ -76,6 +76,19 @@ function extract(config) {
     run(py[0], [...py.slice(1), join(skill, "extract-python", "extract.py"), ...rootArgs, ...srcArgs, "--out", codeOut, ...excludeArgs]);
   }
   run("python3", [join(skill, "dependencies.py"), "--root", repo, "--lang", config.language, "--out", join(pending, "dependencies.json"), "--exclude", config.exclude || ""]);
+  const authoredTests = existsSync(contentPath) ? readContent(contentPath).tests : null;
+  const extraEvidence = [...new Set([...(authoredTests?.evidence || []).map(e => e.file), ...(authoredTests?.captures || []).map(c => c.file)].filter(file => typeof file === "string" && existsSync(join(repo, file))))];
+  run("python3", [join(skill, "test-evidence.py"), "--root", repo, "--out", join(pending, "test-evidence.json"), "--exclude", config.exclude || "", ...extraEvidence.flatMap(file => ["--file", file])]);
+  const extracted = JSON.parse(readFileSync(codeOut, "utf8"));
+  extracted.testFingerprints = { head: JSON.parse(readFileSync(join(pending, "test-evidence.json"), "utf8")).head.fingerprint };
+  writeFileSync(codeOut, JSON.stringify(extracted));
+  const previousEvidence = join(out, "data", "test-evidence.json");
+  if (existsSync(previousEvidence)) {
+    const snapshotPath = join(pending, "test-evidence.json");
+    const fresh = JSON.parse(readFileSync(snapshotPath, "utf8"));
+    fresh.coverage = JSON.parse(readFileSync(previousEvidence, "utf8")).coverage || {};
+    writeFileSync(snapshotPath, JSON.stringify(fresh, null, 2) + "\n");
+  }
   if (config.infra) run("python3", [join(skill, "extract-terraform", "extract.py"), "--root", resolve(repo, config.infra), "--out", join(pending, "infra.json")]);
   else rmSync(join(pending, "infra.json"), { force: true });
 }
@@ -92,6 +105,8 @@ function build() {
   const { code, infra } = loadModels();
   const argv = [join(skill, "build.mjs"), "--model", join(pending, "model.json"), "--content", contentPath, "--out", out];
   if (existsSync(join(pending, "dependencies.json"))) argv.push("--dependencies", join(pending, "dependencies.json"));
+  if (args["test-evidence"]) argv.push("--test-evidence", resolve(args["test-evidence"]));
+  else if (existsSync(join(pending, "test-evidence.json"))) argv.push("--test-evidence", join(pending, "test-evidence.json"));
   if (infra) argv.push("--infra-model", join(pending, "infra.json"));
   run("node", argv);
   const content = readContent(contentPath);
@@ -106,7 +121,7 @@ if (args.action === "refresh-renderer") {
   if (hasInfra) shell = shell.replace('<script src="data/content.js"></script>', '<script src="data/content.js"></script>\n<script src="data/infra.js"></script>');
   writeFileSync(join(out, "index.html"), `<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n${shell.replace("<header", "</head>\n<body>\n<header")}\n</body>\n</html>\n`);
   writeFileSync(join(out, "artifact.html"), shell);
-  for (const f of ["appedia.js", "appedia.css"]) copyFileSync(join(assets, f), join(out, f));
+  for (const f of ["appedia.js", "appedia.css", "tests.js", "tests.css"]) copyFileSync(join(assets, f), join(out, f));
   console.log(`renderer refreshed: ${out}`);
 } else if (args.action === "prepare") {
   const cfg = settings();

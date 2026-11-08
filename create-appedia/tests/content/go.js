@@ -11,6 +11,13 @@ window.APPEDIA_CONTENT = {
   snapshot: "Self-test fixture",
   rulesSource: "Team conventions",
   tasksSource: "Where to start",
+  tests: {
+    scope: "Order placement assessment has not yet been performed.",
+    features: [{ id: "place-order", title: "Place an order", summary: "Validate, stamp and store an order.",
+      scenarios: [{ id: "save", title: "Save a valid order", summary: "Inspect assertions before deciding what is established.",
+        dimension: "behavior", status: "unassessed", flows: ["place"], evidence: [] }] }],
+    evidence: [], captures: []
+  },
   concepts: [
     ["Order", "A customer's request for items, with an ID, a status and a time.", "internal~orders.Order"],
     ["Service", "The only place where orders are validated and stamped.", "internal~orders.Service"],

@@ -47,3 +47,11 @@ For a reviewed update with a saved baseline, run `prepare`, edit
 `finalize --jsdom <dir>`. The accepted models and source hashes are kept in
 `.maintenance/`; a normal build does not move the baseline. To update only the
 renderer and page shell, use `appedia.mjs --action refresh-renderer`.
+
+## Test assessments and evidence
+
+The Tests tab separates functional scenarios from package code coverage. Edit
+`tests` in `data/content.js`; collect sources/results separately and pass
+`--test-evidence <json>` when building. `data/test-evidence.json` retains collection
+provenance. Prefer project-owned E2E tests for captures; builds never run them.
+Include `tests.js`, `tests.css` and recorded metadata when sharing the folder.

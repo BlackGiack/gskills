@@ -193,7 +193,7 @@
   let zoomOutFrom = null;
 
   /* ---------- router ---------- */
-  const modes = { dependencies: $("#mode-dependencies"), explore: $("#mode-explore"), flows: $("#mode-flows"), rules: $("#mode-rules"), tasks: $("#mode-tasks"), ref: $("#mode-ref") };
+  const modes = { tests: $("#mode-tests"), dependencies: $("#mode-dependencies"), explore: $("#mode-explore"), flows: $("#mode-flows"), rules: $("#mode-rules"), tasks: $("#mode-tasks"), ref: $("#mode-ref") };
   const firstFlow = C.flowGroups.length ? C.flowGroups[0].flows[0] : Object.keys(C.flows)[0];
   let lastExplore = "map", lastInfra = "infra/map", lastFlow = firstFlow ? "flow-" + firstFlow : "flow-";
   // point every space-dependent lookup at the code or the infrastructure
@@ -228,6 +228,7 @@
     if (h === "map" || h.startsWith("mapfocus-") || h.startsWith("pkg-") || h.startsWith("focus-") || h.startsWith("type-") || h.startsWith("fn-")) { lastExplore = h; setMode("explore"); renderExplore(h); }
     else if (h.startsWith("flow-")) { lastFlow = h; setMode("flows"); renderFlows(h.slice(5)); }
     else if (h === "rules" || h.startsWith("rule-")) { setMode("rules"); renderRules(h.startsWith("rule-") ? h.slice(5) : null); }
+    else if (h === "tests" || h.startsWith("tests-")) { setMode("tests"); window.APPEDIA_TEST_UI.render(h); }
     else if (h === "tasks") { setMode("tasks"); renderTasks(); }
     else if (h === "dependencies") { setMode("dependencies"); renderDependencies(); }
     else if (h === "ref") { setMode("ref"); renderRef(); }
@@ -406,7 +407,7 @@
       el("h3", { text: "How to read this" }),
       SPACE === "infra"
         ? el("p", { class: "howto" }, "Three zoom levels: the service areas, one area's resources, one resource with its code. Ctrl+click a box to isolate it with its neighbours. ", el("b", { text: HAS_FLOW ? "References / Data flow" : "" }), HAS_FLOW ? " switches the arrows between what names what and what moves where at run time. " : "", "Use the breadcrumb or Esc to zoom back out. Press ", el("b", { text: "/" }), " to search anything.")
-        : el("p", { class: "howto" }, "Three zoom levels: the package map, one package's types, one type with its code. In a package, Ctrl+click a type (or its ⌖) to isolate it with the types it is linked to. Use the breadcrumb or Esc to zoom back out. ", el("b", { text: "Flows" }), " shows how the parts talk to each other, step by step. Press ", el("b", { text: "/" }), " to search anything."),
+        : el("p", { class: "howto" }, "Three zoom levels: the package map, one package's types, one type with its code. In a package, Ctrl+click a type (or its ⌖) to isolate it with the types it is linked to. Use the breadcrumb or Esc to zoom back out. ", el("b", { text: "Flows" }), " shows how the parts talk to each other, step by step. Tests links feature scenarios to their evidence and flows; its Code coverage view shows recorded statement measurements. Press ", el("b", { text: "/" }), " to search anything."),
       el("p", { class: "muted", style: "font-size:0.8rem" }, "Snapshot: " + C.snapshot)
     ].filter(Boolean));
   }
@@ -1086,6 +1087,7 @@
         el("div", { class: "seqwrap", id: "seqwrap" }, seqDiagram(f)),
         el("div", { class: "stepcard", id: "stepcard" }));
     }
+    window.APPEDIA_TEST_UI?.flowPanel(fid, "head");
     markStep(f, step);
   }
   function legend() {
@@ -1293,6 +1295,7 @@
      ===================================================================== */
   const INDEX = [{ kind: "page", title: "Dependencies", sub: "Direct dependency versions", route: "dependencies", hay: "dependencies versions updates outdated", w: 1 }];
   (function buildIndex() {
+    INDEX.push(...(window.APPEDIA_TEST_UI?.searchEntries() || []));
     for (const [id, c] of Object.entries(C.packages)) if (!(M.folded || []).includes(id)) INDEX.push({ kind: "package", title: c.label, sub: c.role, route: "pkg-" + id, hay: (c.label + " " + id + " " + c.role).toLowerCase(), w: 4 });
     for (const [id, p] of Object.entries(P)) {
       for (const t of Object.values(p.types)) INDEX.push({ kind: "type", title: `${t.name}`, sub: `${pkgLabel(id)} · ${firstLine(t.doc) || t.kind}`, route: `type-${id}.${t.name}`, hay: (t.name + " " + id + " " + firstLine(t.doc)).toLowerCase(), name: t.name.toLowerCase(), w: 3 });

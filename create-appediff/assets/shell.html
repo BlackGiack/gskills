@@ -3,6 +3,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@400;600;700&display=swap">
 <link rel="stylesheet" href="appedia.css">
+<link rel="stylesheet" href="tests.css">
 
 <header class="top">
   <button class="brand" id="brand" type="button">{{APP}} <span>appediff</span></button>
@@ -12,6 +13,7 @@
     <button type="button" data-mode="infra" hidden>Infrastructure</button>
     <button type="button" data-mode="dependencies">Dependencies</button>
     <button type="button" data-mode="flows">Flows</button>
+    <button type="button" data-mode="tests">Tests</button>
     <button type="button" data-mode="files">Files</button>
   </nav>
   <div class="searchbox">
@@ -41,9 +43,11 @@
   <section class="mode" id="mode-rules" aria-label="Rules"></section>
   <section class="mode" id="mode-tasks" aria-label="Tasks"></section>
   <section class="mode" id="mode-dependencies" aria-label="Dependencies"></section>
+  <section class="mode" id="mode-tests" aria-label="Tests"></section>
   <section class="mode" id="mode-ref" aria-label="Reference"></section>
 </main>
 
 <script src="data/model.js"></script>
 <script src="data/content.js"></script>
+<script src="tests.js"></script>
 <script src="appedia.js"></script>

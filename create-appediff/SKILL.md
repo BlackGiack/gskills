@@ -1,6 +1,6 @@
 ---
 name: create-appediff
-description: Build an appediff, an interactive review site of a code change (a branch, a PR/MR, a commit range or uncommitted work) - a landing page explaining the change in the PR format, then the package map, class diagrams, Terraform infrastructure and sequence-diagram flows coloured by what is new (green), changed (green stripes), dropped (red) or moved, down to the diff of each function, resource and file. Use when the user asks for an appediff, or for a visual or interactive review of a change, branch or merge request.
+description: Build an appediff, an interactive review site of a code change (a branch, a PR/MR, a commit range or uncommitted work) - a landing page explaining the change in the PR format, then the package map, class diagrams, Terraform infrastructure and sequence-diagram flows coloured by what is new (green), changed (green stripes), dropped (red) or moved, down to the diff of each function, resource and file, with functional test evidence and gaps for changed behavior. Use when the user asks for an appediff, or for a visual or interactive review of a change, branch or merge request.
 ---
 
 # create-appediff
@@ -23,10 +23,11 @@ to a head revision:
 * **Flows**: sequence diagrams of the behaviours the change touches, old and
   new steps together (red dropped calls, green new ones), with Diff / Before /
   After views; each step opens the diff of its code.
+* **Tests**: searchable feature/scenario evidence for added, modified and retained behavior; links to flows and test sources, UI captures and gaps. Test relevance is independent of whether the test changed. Optional base/head statement profiles are compared only when provenance and collection settings match.
 * **Files**: every changed file's git diff, tests, CI and config included, so
   nothing in the change is out of reach.
 
-Inputs, one build:
+Inputs, one build (recorded test evidence is optional):
 
 | | What | Who writes it |
 |---|---|---|
@@ -35,6 +36,34 @@ Inputs, one build:
 | `tmp/appediff/data/content.js` | the review, package roles, map, flows with their step marks | you |
 
 The mechanics are one command. **The value is in the review and the flows.**
+
+## Tests
+
+Use the **Features** subtab to explain what behavior, layout and interaction are
+supported by actual assertions or documented observations, what is partial or
+missing, and what to test next. Keep unassessed scope explicit. **Code coverage**
+is a separate technical subtab; statement percentages never establish functional
+coverage. Both views support search. Features and scenarios link to flows, and a
+flow's Tests and gaps panel opens the exact related scenario.
+
+Read [references/testing.md](references/testing.md) when writing or refreshing
+these assessments. Author `tests` in `content.js`; collect test sources separately
+with `scripts/test-evidence.py` and pass the result as `--test-evidence` to the
+build. Normal collection and builds never execute project tests. Go coverage
+execution is a separate, explicit `--run-go-coverage` action; existing profiles
+need their real run metadata. Other language coverage can remain uncollected.
+
+Prefer **project-owned E2E library tests** for UI journeys and screenshots. When
+adding tests is authorized, follow the project's language and test conventions;
+Go `_test.go` files behind an `e2e` build tag are one option for explicit runs.
+An appedia-owned script or ad hoc agent check is a last resort requiring an
+explanation. Separate automated assertions from manual visual observations.
+
+For changed flows, link existing tests even when unchanged if their assertions
+cover the modification. Verify why they apply, their limits and whether they ran
+against the reviewed head. A passing suite or changed test file alone proves
+neither relevance nor completeness. Appediff seeds keep relevant unchanged tests
+and mark assessments as drafts until checked against the head.
 
 ## Dependencies
 
@@ -97,7 +126,7 @@ changed package directories into `.work/dependencies.json`, and writes a first `
   is seeded from it: package entries, map, outside systems, the infrastructure
   section and the flows the change touches. Flow selection uses direct refs,
   participant associations, source files and optional `sources` annotations.
-  Rules, tasks, the tour and untouched flows are left out. When present,
+  Relevant test features and all their supporting evidence are also seeded, including unchanged tests; linked flow context is retained. Seeded conclusions are unassessed drafts until reviewed. Rules, tasks and the tour are left out. When present,
   `.maintenance/baseline.json` is compared against both revisions and the
   result reports whether the seed matches base, head, neither or has unknown
   provenance. Treat the seed as a draft and check it against the head code.
@@ -132,7 +161,8 @@ reference. `--rebuild` reuses this snapshot and does not query registries again.
 3. `flows`: every behaviour the change touches, old and new steps together in
    execution order, marked; a behaviour the change adds or drops gets its own
    flow.
-4. `review`: Summary, Evidence, Merge danger. Link what you talk about with
+4. `tests`: scenarios for changed behavior and retained regressions, relevant existing/new tests, explicit gaps and any UI evidence. Keep test change and scenario support independent.
+5. `review`: Summary, Evidence, Merge danger. Link what you talk about with
    `[[ref]]`: the paragraph becomes the explanation on that diff.
 
 **5. The loop.** The build fails on any reference to something that doesn't
@@ -157,13 +187,16 @@ node <skill>/scripts/screenshot.mjs --site <repo>/tmp/appediff --out /tmp/appedi
   ignored by git, say so (don't edit `.gitignore` unless asked).
 * To share as a claude.ai artifact, publish `tmp/appediff/artifact.html` with
   `root: <repo>/tmp/appediff` and
-  `files: ["appedia.css", "appedia.js", "data/model.js", "data/content.js", "data/diff.js"]`,
+  `files: ["appedia.css", "appedia.js", "tests.css", "tests.js", "data/model.js", "data/content.js", "data/diff.js"]`,
   plus `"data/infra.js"` when there is infrastructure. The page carries the
   source of every package in the repo, not only the changed ones: say so when
   the user means to share it outside the team.
 * Say what you verified (tests run, smoke, screenshots) and what you couldn't.
+* Include `data/test-evidence.json` alongside a shared artifact when collected; it records raw source and profile provenance. Recorded results and UI captures must identify their actual scope and endpoint.
 
 ## Quality bar
+
+* Test claims come from assertions or documented observations, with limits. UI evidence prefers project-integrated E2E tests; fallbacks state why. Unchanged tests remain linked when relevant, stale evidence is reassessed, and missing or mismatched profiles never become zero or an inferred delta.
 
 * The review reads in two minutes and answers: what changed, why, how we know
   it works, what could break. Every claim in it was checked in the code or a
@@ -193,7 +226,7 @@ node <skill>/scripts/screenshot.mjs --site <repo>/tmp/appediff --out /tmp/appedi
 
 ```
 SKILL.md
-assets/      shell.html, appedia.css, appedia.js (the appedia renderer with the diff layer), content.template.js
+assets/      shell.html, appedia.css, appedia.js, tests.css, tests.js (the appedia renderer with the diff layer), content.template.js
 scripts/     appediff.mjs (the pipeline), merge.mjs (two models → diff model), files.mjs (git diff per file),
              build.mjs, smoke.mjs, screenshot.mjs, selftest.mjs,
              extract-go/, extract-python/extract.py, extract-ts/extract.mjs, extract-terraform/extract.py

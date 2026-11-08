@@ -126,3 +126,19 @@ it in `APPEDIA_MODEL.dependencies`. Keep both skills' collector and
 `tests/dependencies.py` / `tests/dependency-view.mjs` byte-identical, and run those tests plus both self-tests.
 See `references/dependencies.md` for the schema and usage scope. Latest-version
 queries must remain package-manager-only and fail to `?`, never web browsing.
+
+## Tests tab
+
+`assets/tests.js` and `tests.css`, `scripts/testing.mjs` and `test-evidence.py`,
+`references/testing.md`, and `tests/testing.mjs`, `test-evidence.py` and
+`testing-view.mjs` are byte-identical bundles in both skills. Update both copies;
+`check-bundles.mjs --required` checks parity in the combined repository. Both
+self-tests exercise the new validation, collector and renderer. Keep old content
+building without assessments or profiles.
+
+Routes: `tests`, `tests-coverage`, `tests-<feature>[/<scenario>]`,
+`tests-source-<evidence>`, `tests-capture-<capture>`. The flow hook passes the
+actual diagram view; head assessments do not become baseline coverage in Before.
+The browser receives ordinary script/style tags, embedded source excerpts and
+images. Builds consume recorded evidence; only explicit collector coverage mode
+executes tests. Preserve unchanged-test relevance independently of code marks.

@@ -9,8 +9,8 @@ import { fileURLToPath } from "node:url";
 const [site, jsdom] = process.argv.slice(2);
 const { JSDOM } = createRequire(join(jsdom, "package.json"))("jsdom");
 let html = readFileSync(join(site, "index.html"), "utf8");
-for (const file of ["data/model.js", "data/content.js", "data/infra.js", "data/diff.js", "appedia.js"]) {
-  html = html.replace(`<script src="${file}"></script>`, () => "<script>" + readFileSync(join(site, file), "utf8") + "</script>");
+for (const file of ["data/model.js", "data/content.js", "data/infra.js", "data/diff.js", "tests.js", "appedia.js"]) {
+  html = html.replace(`<script src="${file}"></script>`, () => "<script>" + readFileSync(join(site, file), "utf8").replace(/<\/script/gi, "<\\/script") + "</script>");
 }
 const dom = new JSDOM(html, {
   runScripts: "dangerously", url: "file:///appedia/index.html#dependencies",

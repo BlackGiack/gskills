@@ -30,6 +30,11 @@ const ok = what => console.log(`  ✓ ${what}`);
 const dependencies = run("python3", [join(skill, "tests", "dependencies.py")]);
 if (dependencies.status === 0) ok("dependency collector tests"); else fail("dependency collector tests", dependencies.stderr || dependencies.stdout);
 
+for (const [command, file] of [["node", "testing.mjs"], ["python3", "test-evidence.py"]]) {
+  const result = run(command, [join(skill, "tests", file)]);
+  if (result.status === 0) ok(file + " passed"); else fail(file, result.stderr || result.stdout);
+}
+
 const impact = run("node", [join(skill, "tests", "impact.mjs")]);
 if (impact.status === 0) ok("impact helpers: " + impact.stdout.trim()); else fail("impact helper tests", impact.stderr || impact.stdout);
 const git = (repo, ...a) => run("git", ["-C", repo, "-c", "user.email=selftest@example.com", "-c", "user.name=selftest", ...a]);
@@ -142,6 +147,14 @@ console.log("\nvalidation");
   if (r.status === 1 && !missing.length) ok("build rejects unknown review links and supporting sources");
   else fail("build rejects unknown review links", `exit ${r.status}; missing: ${missing.join("; ")}\n${r.stderr}`);
 }
+
+const testingRepo = makeRepo("orders-go", true);
+useContent(testingRepo, join(skill, "tests", "content", "orders-go.js"));
+const testingBuild = appediff(testingRepo, CASES["orders-go"]);
+if (testingBuild.status !== 0) fail("testing fixture build", testingBuild.stderr || testingBuild.stdout);
+const testingSite = site(testingRepo);
+const testingView = run("node", [join(skill, "tests", "testing-view.mjs"), testingSite, args.jsdom]);
+if (testingView.status === 0) ok(testingView.stdout.trim()); else fail("Tests view", testingView.stderr || testingView.stdout);
 
 rmSync(work, { recursive: true, force: true });
 console.log(failures ? `\n${failures} failure(s)` : "\nall checks passed");

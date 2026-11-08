@@ -1,6 +1,6 @@
 ---
 name: create-appedia
-description: Build an "appedia" for a code repository, an interactive onboarding site that opens from disk. Readers zoom from a package map into each package's class diagram and then into a type's real code, step through clickable sequence-diagram flows tied to real methods, and search everything. It also lists the rules the code relies on and where to start for common changes, and, when the repo holds Terraform, adds an Infrastructure tab with the same three zoom levels over the cloud resources (references or data flow). Use when someone asks for an onboarding map, an interactive architecture overview, a codebase explorer or "appedia" for a project, or to refresh an existing appedia after the code changed. Extractors exist for Go, Python, TypeScript/JavaScript/React and Terraform.
+description: Build an "appedia" for a code repository, an interactive onboarding site that opens from disk. Readers zoom from a package map into each package's class diagram and then into a type's real code, step through clickable sequence-diagram flows tied to real methods, and search everything. It also maps functional test evidence and gaps, lists the rules the code relies on and where to start for common changes, and, when the repo holds Terraform, adds an Infrastructure tab with the same three zoom levels over the cloud resources (references or data flow). Use when someone asks for an onboarding map, an interactive architecture overview, a codebase explorer or "appedia" for a project, or to refresh an existing appedia after the code changed. Extractors exist for Go, Python, TypeScript/JavaScript/React and Terraform.
 ---
 
 # create-appedia
@@ -19,7 +19,7 @@ published as a claude.ai artifact. It has three zoom levels:
 3. **Type or function**: fields, methods, relations, usages and the real
    source, with types and calls in the code clickable.
 
-It also has **Flows** (sequence diagrams of what the system does, each step
+It also has **Tests** (searchable feature/scenario assessments, evidence, UI captures and optional package code coverage), **Flows** (sequence diagrams of what the system does, each step
 linked to its code), **Rules**, **I want to…** and **Reference** pages, and
 global search (`/`). Ctrl+click a box on the map to isolate that package with
 its neighbours. Optional map toggles (`map.toggles` in `content.js`) let the
@@ -33,7 +33,7 @@ resource with its HCL (references clickable). A switch turns every arrow from
 time: notifications, triggers, pushes, sinks, plus what only the code knows).
 Resources link to the code packages they deploy, and back.
 
-Two inputs, one build:
+Two required inputs, optional test evidence, one build:
 
 | | What | Who writes it |
 |---|---|---|
@@ -45,6 +45,34 @@ Two inputs, one build:
 The model is cheap and mechanical. **The value is in `content.js`,
 especially the flows.** Spend your effort there (see
 `references/content-guide.md`).
+
+## Tests
+
+Use the **Features** subtab to explain what behavior, layout and interaction are
+supported by actual assertions or documented observations, what is partial or
+missing, and what to test next. Keep unassessed scope explicit. **Code coverage**
+is a separate technical subtab; statement percentages never establish functional
+coverage. Both views support search. Features and scenarios link to flows, and a
+flow's Tests and gaps panel opens the exact related scenario.
+
+Read [references/testing.md](references/testing.md) when writing or refreshing
+these assessments. Author `tests` in `content.js`; collect test sources separately
+with `scripts/test-evidence.py` and pass the result as `--test-evidence` to the
+build. Normal collection and builds never execute project tests. Go coverage
+execution is a separate, explicit `--run-go-coverage` action; existing profiles
+need their real run metadata. Other language coverage can remain uncollected.
+
+Prefer **project-owned E2E library tests** for UI journeys and screenshots. When
+adding tests is authorized, follow the project's language and test conventions;
+Go `_test.go` files behind an `e2e` build tag are one option for explicit runs.
+An appedia-owned script or ad hoc agent check is a last resort requiring an
+explanation. Separate automated assertions from manual visual observations.
+
+For changed flows, link existing tests even when unchanged if their assertions
+cover the modification. Verify why they apply, their limits and whether they ran
+against the reviewed head. A passing suite or changed test file alone proves
+neither relevance nor completeness. Appediff seeds keep relevant unchanged tests
+and mark assessments as drafts until checked against the head.
 
 ## Dependencies
 
@@ -212,6 +240,8 @@ node <skill>/scripts/appedia.mjs --action rebuild --repo <repo>
 node <skill>/scripts/appedia.mjs --action finalize --repo <repo> --jsdom /tmp/appedia-smoke
 ```
 
+Prepare also collects fresh test-source evidence (without executing tests) and follows feature/scenario associations in the impact report. Review stale assessments and gaps in `content.tests`; `rebuild` and `finalize` accept `--test-evidence <json>` to supply separately collected results.
+
 Prepare also collects a fresh dependency snapshot; rebuild/finalize reuse it,
 while refresh-renderer preserves the existing snapshot.
 
@@ -247,13 +277,16 @@ summary.
   exact extract and build commands you used, so anyone can rebuild it.
 * To share as a claude.ai artifact, publish `appedia/artifact.html` with
   `root: <repo>/appedia` and
-  `files: ["appedia.css", "appedia.js", "data/model.js", "data/content.js"]`
+  `files: ["appedia.css", "appedia.js", "tests.css", "tests.js", "data/model.js", "data/content.js"]`
   (plus `"data/infra.js"` with an Infrastructure tab).
   The page contract and the CDN allowlist are already met: the only external
   resource is Google Fonts.
 * Tell the user what you could and couldn't verify.
+* Include `data/test-evidence.json` alongside a shared artifact when collected; it records raw source and profile provenance. Recorded results and UI captures must identify their actual scope and endpoint.
 
 ## Quality bar
+
+* Test claims come from assertions or documented observations, with limits. UI evidence prefers project-integrated E2E tests; fallbacks state why. Unchanged tests remain linked when relevant, stale evidence is reassessed, and missing or mismatched profiles never become zero or an inferred delta.
 
 * Every package has a role written from the reader's side, saying what it owns
   and what it doesn't.
@@ -296,7 +329,7 @@ summary.
 
 ```
 SKILL.md
-assets/      shell.html, appedia.css, appedia.js (the renderer: generic, no app-specific code),
+assets/      shell.html, appedia.css, appedia.js, tests.css, tests.js (the renderer: generic, no app-specific code),
              content.template.js, appedia-README.template.md
 scripts/     build.mjs, smoke.mjs, screenshot.mjs, extract-go/, extract-python/extract.py, extract-ts/extract.mjs,
              extract-terraform/extract.py,

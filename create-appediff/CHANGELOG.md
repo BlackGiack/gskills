@@ -1,6 +1,14 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 — 2026-11-08
+
+* Added a Tests tab with searchable feature assessments, behavior/layout/interaction
+  scenarios, evidence methods, source/capture views, suggested tests, bidirectional
+  flow links and a separate package statement-coverage view. Old content needs no
+  migration. Shared validation/collection helpers support paired test sources,
+  unchanged-test relevance, stale evidence and comparable Go profiles. Project-owned
+  E2E tests are the preferred screenshot source; ad hoc checks are documented
+  fallbacks. Builds never implicitly execute application tests.
 
 * Added a Dependencies tab and package-manager-only direct dependency snapshots.
   Unknown versions display `?`; no web lookup fallback. Appediff suggests updates

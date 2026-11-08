@@ -24,9 +24,9 @@ const errors = [];
 const vc = new VirtualConsole();
 vc.on("jsdomError", e => errors.push("error: " + (e.detail?.stack || e.message).split("\n").slice(0, 3).join(" | ")));
 vc.on("error", e => errors.push("console.error: " + e));
-const inline = (html, file) => html.replace(`<script src="${file}"></script>`, () => "<script>" + readFileSync(join(site, file), "utf8") + "</script>");
+const inline = (html, file) => html.replace(`<script src="${file}"></script>`, () => "<script>" + readFileSync(join(site, file), "utf8").replace(/<\/script/gi, "<\\/script") + "</script>");
 let html = readFileSync(join(site, "index.html"), "utf8");
-for (const f of ["data/model.js", "data/content.js", "data/infra.js", "appedia.js"]) if (html.includes(`<script src="${f}"></script>`)) html = inline(html, f);
+for (const f of ["data/model.js", "data/content.js", "data/infra.js", "tests.js", "appedia.js"]) if (html.includes(`<script src="${f}"></script>`)) html = inline(html, f);
 const dom = new JSDOM(html, {
   runScripts: "dangerously", pretendToBeVisual: true, url: "file:///appedia/index.html", virtualConsole: vc,
   beforeParse(w) {
@@ -62,6 +62,11 @@ const checks = {
 checks.mapfocus = checks.focus;
 const routes = ["map", "rules", "tasks", "ref"];
 routes.push("dependencies");
+routes.push("tests", "tests-coverage");
+for (const feature of M.testing?.features || []) { routes.push("tests-" + feature.id); for (const scenario of feature.scenarios) routes.push(`tests-${feature.id}/${scenario.id}`); }
+for (const evidence of M.testing?.evidence || []) routes.push("tests-source-" + evidence.id);
+for (const capture of M.testing?.captures || []) routes.push("tests-capture-" + capture.id);
+checks.tests = () => d.querySelector("#mode-tests h1") ? null : "no Tests view";
 checks.dependencies = () => d.querySelector("#mode-dependencies h1") ? null : "no dependency page";
 const folded = new Set(M.folded || []);
 for (const id of new Set([...Object.keys(M.packages), ...Object.keys(C.packages || {})])) if (!folded.has(id)) routes.push("pkg-" + id);

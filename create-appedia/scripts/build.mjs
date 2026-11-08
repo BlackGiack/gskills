@@ -11,12 +11,13 @@
 // <out>/artifact.html (the bare body for an artifact viewer), the renderer and
 // <out>/data/{model,content}.js. --assets defaults to ../assets next to this
 // script.
-import { readFileSync, writeFileSync, mkdirSync, copyFileSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, copyFileSync, existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 import { makeIndex } from "./impact.mjs";
+import { prepareTesting } from "./testing.mjs";
 
 const args = Object.fromEntries(process.argv.slice(2).reduce((acc, a, i, all) => (a.startsWith("--") ? [...acc, [a.slice(2), all[i + 1]]] : acc), []));
 const model = JSON.parse(readFileSync(args.model, "utf8"));
@@ -25,7 +26,7 @@ vm.runInNewContext(readFileSync(args.content, "utf8"), ctx);
 const content = ctx.window.APPEDIA_CONTENT;
 const out = args.out;
 const assets = args.assets || join(dirname(fileURLToPath(import.meta.url)), "..", "assets");
-if (!args.model || !args.content || !out) { console.error("usage: node build.mjs --model model.json --content content.js --out dir [--infra-model infra.json] [--dependencies dependencies.json] [--assets dir]"); process.exit(2); }
+if (!args.model || !args.content || !out) { console.error("usage: node build.mjs --model model.json --content content.js --out dir [--infra-model infra.json] [--dependencies dependencies.json] [--test-evidence tests.json] [--assets dir]"); process.exit(2); }
 const infraModel = args["infra-model"] ? JSON.parse(readFileSync(args["infra-model"], "utf8")) : null;
 const infraContent = content.infra || {};
 const dependencies = args.dependencies ? JSON.parse(readFileSync(args.dependencies, "utf8")) : model.dependencies || null;
@@ -70,6 +71,9 @@ mkdirSync(join(out, "data"), { recursive: true });
 /* ---------- validation ---------- */
 const EXTERNAL = new Set(Object.keys(content.externals || {}));
 const errors = [];
+const testSnapshot = args["test-evidence"] ? JSON.parse(readFileSync(args["test-evidence"], "utf8")) : model.testEvidence || (existsSync(join(out, "data", "test-evidence.json")) ? JSON.parse(readFileSync(join(out, "data", "test-evidence.json"), "utf8")) : null);
+const testing = prepareTesting(content.tests, testSnapshot, { flows: content.flows || {}, packages: model.packages, refs: ref => !!resolve(ref), fingerprints: model.testFingerprints || {}, isDiff: false,  });
+errors.push(...testing.errors);
 if (dependencies) {
   if (!Array.isArray(dependencies.dependencies) || !Array.isArray(dependencies.notes) ||
       !dependencies.notes.every(n => typeof n === "string") || typeof dependencies.checkedAt !== "string" ||
@@ -129,7 +133,7 @@ for (const [id, p] of Object.entries(content.packages || {})) {
   (p.key || []).forEach(k => { if (!model.packages[id].types[k]) errors.push(`package ${id}: key type ${k} not found`); });
   for (const f of Object.keys(p.files || {})) if (!model.packages[id].files.some(x => x.name === f)) errors.push(`package ${id}: file ${f} not found`);
 }
-const warnings = [];
+const warnings = [...testing.warnings];
 for (const id of folded) if ((content.packages || {})[id] || ((content.map || {}).nodes || {})[id]) warnings.push(`package ${id} declares nothing and was folded into its importers: remove it from content.packages and map.nodes, or set packages.${id}.keep = true`);
 if (folded.length) console.log(`folded ${folded.length} package(s) that only re-export: ${folded.join(", ")}`);
 for (const id of Object.keys(model.packages)) if (!(content.packages || {})[id]) warnings.push(`package ${id} has no entry in content.packages: it will show without a role`);
@@ -348,7 +352,7 @@ function autoMapFor(m, mapContent, pkgContent) {
 const autoMap = autoMapFor(model, content.map, content.packages);
 
 /* ---------- write ---------- */
-const packed = { ...model, dependencies, folded, layouts, flowLayouts, autoMap, builtAt: new Date().toISOString() };
+const packed = { ...model, testing: testing.data, dependencies, folded, layouts, flowLayouts, autoMap, builtAt: new Date().toISOString() };
 writeFileSync(join(out, "data", "model.js"), "window.APPEDIA_MODEL = " + JSON.stringify(packed) + ";\n");
 let infraDiagrams = 0;
 if (infraModel) {
@@ -370,3 +374,7 @@ copyFileSync(join(assets, "appedia.js"), join(out, "appedia.js"));
 writeFileSync(join(out, "data", "content-index.json"), JSON.stringify(makeIndex(content, sourceModel, sourceInfraModel), null, 2) + "\n");
 const size = s => (readFileSync(s).length / 1024).toFixed(0) + " KiB";
 console.log(`ok: ${Object.keys(content.flows || {}).length} flows, ${Object.keys(layouts).length} diagrams; model.js ${size(join(out, "data", "model.js"))}` + (infraModel ? `; infrastructure: ${infraDiagrams} areas, infra.js ${size(join(out, "data", "infra.js"))}` : ""));
+
+for (const file of ["tests.js", "tests.css"]) copyFileSync(join(assets, file), join(out, file));
+
+if (testSnapshot) writeFileSync(join(out, "data", "test-evidence.json"), JSON.stringify(testSnapshot, null, 2) + "\n");

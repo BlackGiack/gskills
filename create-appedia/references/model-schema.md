@@ -123,3 +123,15 @@ box per package in that package's diagram.
 * `uses` and `refs` must only contain keys that exist in the model.
 * Validate the output by running `build.mjs` with an empty content file
   (`window.APPEDIA_CONTENT = { app: "X" };`) and then `smoke.mjs`.
+
+## Compiled test assessments
+
+The build adds optional `testing` to the browser model: normalized `features`,
+`evidence`, `captures`, `coverage`, endpoint metadata and collection date. Raw
+inventory is retained in `data/test-evidence.json`, outside the production-code
+model. See [testing.md](testing.md) for the authored and snapshot formats.
+
+Managed extraction pipelines also attach `testFingerprints` to bind collected
+source state to this model (`head`, and `base` on a merged diff model). An unbound
+legacy model cannot establish coverage-profile provenance. This metadata does
+not alter symbol extraction or imply functional test coverage.

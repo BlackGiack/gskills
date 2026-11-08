@@ -65,6 +65,9 @@ window.APPEDIA_CONTENT = {
     // "<external key>": { label: "<Name>", sub: "<what>", ext: true, role: "<…>", files: {}, notes: [], rules: [], key: [] }
   },
 
+  // Feature/scenario assessments and evidence are authored here; see references/testing.md.
+  tests: { scope: "", features: [], evidence: [], captures: [] },
+
   flowGroups: [
     // { name: "<Group>", flows: ["<flowId>", …] }
   ],

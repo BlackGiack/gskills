@@ -159,3 +159,9 @@ write for them.
 - [ ] Every changed function the summary explains is linked, copies included.
 - [ ] Each touched behaviour has a flow that reads correctly in Before and After.
 - [ ] `smoke.mjs` reports no problems.
+
+## Tests
+
+For the optional `tests` section, paired test sources, UI evidence, flow links,
+refresh behavior and code coverage, read [testing.md](testing.md). Assertions and
+recorded observations establish scenario support independently of test-file marks.
