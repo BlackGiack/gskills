@@ -3,6 +3,14 @@
 Newest first. Note anything that changes the content format or the commands
 people run, and how to migrate (see CONTRIBUTING.md, constraint 12).
 
+## 0.6.1 — 2026-11-09
+
+* Evidence collection now retains hashes for non-UTF-8 files, warns and omits
+  their source text instead of aborting. Unavailable current text is not replaced
+  by baseline text. Added regression checks for refresh
+  preservation of coverage provenance and collection of authored evidence and
+  captures; older profiles remain ineligible after source changes.
+
 ## 0.6.0 — 2026-11-08
 
 * Added a Tests tab with searchable feature assessments, behavior/layout/interaction

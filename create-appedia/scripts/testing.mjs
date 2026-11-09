@@ -67,7 +67,7 @@ export function prepareTesting(authored, snapshot, { flows = {}, packages = {}, 
     if (assessmentStale) warnings.push(`evidence ${e.id} source changed since review; linked scenarios need reassessment`);
     if (resultStale) warnings.push(`evidence ${e.id} execution is from a different endpoint; source relevance remains a separate assessment`);
     if (e.method === 'automated' && !e.file) errors.push(`evidence ${e.id}: automated tests require a source file`);
-    return { ...e, source: current?.source ?? previous?.source ?? null, line: current?.line ?? previous?.line ?? e.line ?? 1, sha256: now?.sha256 ?? before?.sha256 ?? null, baseSource: previous?.source ?? null, change, changeBasis, stale, assessmentStale, resultStale };
+    return { ...e, source: now ? (current?.source ?? null) : (previous?.source ?? null), line: current?.line ?? previous?.line ?? e.line ?? 1, sha256: now?.sha256 ?? before?.sha256 ?? null, baseSource: previous?.source ?? null, change, changeBasis, stale, assessmentStale, resultStale };
   });
   const evidenceById = new Map(evidence.map(e => [e.id, e]));
   const captures = rawCaptures.filter(Boolean).map(c => {

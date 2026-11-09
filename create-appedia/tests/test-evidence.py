@@ -11,6 +11,25 @@ collector = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(collector)
 
 class EvidenceTests(unittest.TestCase):
+    def test_non_utf8_evidence_keeps_hash_and_other_sources(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / 'tests').mkdir()
+            raw = b'# coding: latin-1\n# caf\xe9\n'
+            (root / 'tests/test_latin.py').write_bytes(raw)
+            (root / 'test_orders.py').write_text('def test_order(): pass\n', encoding='utf-8')
+            (root / 'notes.txt').write_bytes(b'caf\xe9')
+            result = subprocess.run(['python3', str(script), '--root', str(root), '--out', str(root / 'evidence.json'), '--file', 'notes.txt'], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            data = json.loads((root / 'evidence.json').read_text())['head']
+            self.assertEqual(data['files']['tests/test_latin.py']['sha256'], collector.digest(raw))
+            self.assertIsNone(data['files']['tests/test_latin.py']['source'])
+            self.assertIsNone(data['files']['notes.txt']['source'])
+            self.assertEqual(data['files']['test_orders.py']['source'], 'def test_order(): pass\n')
+            self.assertIn('tests/test_latin.py', result.stderr)
+            (root / 'tests/test_latin.py').write_bytes(raw + b'# changed\n')
+            self.assertNotEqual(data['fingerprint'], collector.collect(root, 'WORKTREE', ['notes.txt'], set())['fingerprint'])
+
     def test_collection_never_executes_and_ignores_outputs(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

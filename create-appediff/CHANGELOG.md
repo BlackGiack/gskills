@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1 — 2026-11-09
+
+* Evidence collection now retains hashes for non-UTF-8 files, warns and omits
+  their source text instead of aborting. Unavailable current text is not replaced
+  by baseline text. Regression coverage is shared with create-appedia.
+
 ## 0.3.0 — 2026-11-08
 
 * Added a Tests tab with searchable feature assessments, behavior/layout/interaction

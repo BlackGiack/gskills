@@ -26,6 +26,12 @@ const added = structuredClone(snapshot); added.base.files = {};
 assert.equal(prepare(authored, added).data.evidence[0].change, 'added');
 const removed = structuredClone(snapshot); removed.head.files = {};
 assert.equal(prepare(authored, removed).data.evidence[0].change, 'removed');
+const unreadable = structuredClone(snapshot);
+unreadable.head.files['orders_test.go'] = { source: null, sha256: sha(Buffer.from([0xe9])) };
+const unreadableResult = prepare(authored, unreadable);
+assert.deepEqual(unreadableResult.errors, []);
+assert.equal(unreadableResult.data.evidence[0].source, null, 'unavailable head text must not be replaced by baseline text');
+assert.equal(unreadableResult.data.evidence[0].baseSource, source.trimEnd());
 for (const mutate of [
   a => a.features.push(a.features[0]),
   a => a.features[0].scenarios[0].flows = ['not-a-flow'],

@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import sys
 import tempfile
 
 SKIP = {'.git', '.hg', '.svn', '.maintenance', 'node_modules', 'vendor', '__pycache__', '.venv', 'venv', 'appedia', 'appediff', '.next'}
@@ -107,7 +108,11 @@ def collect(root, revision, extra, exclude, base_ref=None, allow_new_artifacts=F
             mime = {'.png': 'png', '.jpg': 'jpeg', '.jpeg': 'jpeg', '.webp': 'webp', '.gif': 'gif'}[suffix]
             entry['image'] = f'data:image/{mime};base64,' + base64.b64encode(raw).decode()
         else:
-            entry['source'] = raw.decode('utf-8')
+            try:
+                entry['source'] = raw.decode('utf-8')
+            except UnicodeDecodeError:
+                entry['source'] = None
+                print(f'warning: {revision}: {path}: source is not UTF-8; retained SHA-256 without source text', file=sys.stderr)
         files[path] = entry
     fingerprint = digest(json.dumps({'sources': sources, 'exclude': sorted(exclude)}, sort_keys=True, separators=(',', ':')).encode())
     return {'revision': revision, 'fingerprint': fingerprint, 'files': files}

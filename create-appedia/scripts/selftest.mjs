@@ -16,6 +16,8 @@ import { readFileSync, writeFileSync, mkdtempSync, mkdirSync, copyFileSync, cpSy
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { readContent } from "./impact.mjs";
+import { prepareTesting } from "./testing.mjs";
 
 const args = Object.fromEntries(process.argv.slice(2).reduce((acc, a, i, all) => (a.startsWith("--") ? [...acc, [a.slice(2), all[i + 1] && !all[i + 1].startsWith("--") ? all[i + 1] : true]] : acc), []));
 const skill = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -131,6 +133,36 @@ console.log("\nupdate pipeline");
     const changed = run("node", [join(skill, "scripts", "appedia.mjs"), "--action", "finalize", "--repo", source, "--out", site, "--jsdom", args.jsdom]);
     if (changed.status !== 1 || !/application inputs changed after prepare/.test(changed.stderr)) fail("finalize blocks changed source inputs", changed.stderr || changed.stdout);
     else ok("finalize blocks changed source inputs");
+    const snapshotPath = join(site, ".maintenance", "pending", "test-evidence.json");
+    const previous = JSON.parse(readFileSync(snapshotPath, "utf8"));
+    previous.coverage = { head: {
+      command: "go test -cover ./...", collectedAt: "2026-11-01T00:00:00Z",
+      scope: "./...", metric: "statements", mode: "atomic", result: "passed",
+      revision: previous.head.revision, fingerprint: previous.head.fingerprint,
+      packages: [], toolchain: "fixture", environment: { GOOS: "fixture" }
+    } };
+    writeFileSync(join(site, "data", "test-evidence.json"), JSON.stringify(previous));
+    const notes = "Observed the empty order form.\n";
+    const image = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l4sAAAAASUVORK5CYII=', 'base64');
+    writeFileSync(join(source, "observations.md"), notes);
+    writeFileSync(join(source, "form.png"), image);
+    const contentPath = join(site, "data", "content.js");
+    const content = readContent(contentPath);
+    content.tests = { features: [], evidence: [{ id: "observation", name: "Form inspection", method: "manual", file: "observations.md", proves: "Observed empty form", limits: "Fixture observation only" }], captures: [{ id: "form", title: "Empty form", file: "form.png", state: "Empty", observation: "Fixture image", limits: "Synthetic fixture only", evidence: ["observation"] }] };
+    writeFileSync(contentPath, "window.APPEDIA_CONTENT = " + JSON.stringify(content) + ";\n");
+    const refresh = run("node", [join(skill, "scripts", "appedia.mjs"), "--action", "prepare", "--repo", source, "--out", site, "--lang", "go", "--exclude", ""]);
+    if (refresh.status !== 0) fail("refresh collects authored evidence and retains coverage", refresh.stderr || refresh.stdout);
+    else {
+      const fresh = JSON.parse(readFileSync(snapshotPath, "utf8"));
+      const model = JSON.parse(readFileSync(join(site, ".maintenance", "pending", "model.json"), "utf8"));
+      const assessment = prepareTesting(content.tests, fresh, { fingerprints: model.testFingerprints });
+      if (JSON.stringify(fresh.coverage) !== JSON.stringify(previous.coverage)) fail("refresh preserves original coverage provenance", JSON.stringify(fresh.coverage));
+      else ok("refresh preserves original coverage provenance");
+      if (fresh.head.files['observations.md']?.source !== notes || fresh.head.files['form.png']?.image !== 'data:image/png;base64,' + image.toString('base64')) fail("refresh collects authored evidence and captures", JSON.stringify(Object.keys(fresh.head.files)));
+      else ok("refresh collects authored evidence and captures outside test-file conventions");
+      if (fresh.head.fingerprint === previous.head.fingerprint || assessment.errors.length || assessment.data.coverage.head?.eligible !== false) fail("refresh keeps older coverage ineligible after source changes", JSON.stringify(assessment));
+      else ok("refresh keeps older coverage ineligible after source changes");
+    }
   }
 }
 
