@@ -79,6 +79,11 @@ a { color: var(--accent); }
 .levels span.on { color: var(--on-accent); background: var(--accent); border-color: var(--accent); }
 .levels i { color: var(--faint); font-style: normal; }
 
+
+.crumbs [aria-current="page"] { background: var(--surface-2); color: var(--fg); text-decoration: underline; text-underline-offset: 0.24em; }
+.fs-hint { overflow-wrap: anywhere; }
+.fs-hint button { margin-inline-start: 0.5em; }
+
 /* ---------- explore ---------- */
 .mode { display: none; }
 .mode.on { display: block; }
@@ -417,6 +422,10 @@ pre.src .fold:hover { color: var(--accent); }
 .rstat.a b { color: var(--add); } .rstat.d b { color: var(--del); } .rstat.c b { color: var(--add); }
 .rgrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 380px); gap: 28px; align-items: start; }
 .rtext { min-width: 0; }
+.review-detail { border-bottom: 1px solid var(--line); }
+.review-detail > summary { padding: 10px 4px; cursor: pointer; font-weight: 700; }
+.review-detail > summary:hover { color: var(--accent); }
+.review-detail > div { padding: 0 8px 8px; overflow-wrap: anywhere; }
 .rtext h2 { font-size: 1.25rem; margin: 22px 0 8px; }
 .rtext h2:first-child { margin-top: 0; }
 .rtext h3 { font-size: 1rem; margin: 16px 0 6px; }
@@ -445,6 +454,7 @@ pre.mdcode span:not(.add):not(.del) { display: block; }
 .flows.filesmode #fcatlist button { display: grid; grid-template-columns: 1.6em minmax(0, 1fr) auto; gap: 6px; align-items: center; }
 .fp { min-width: 0; } .fp b { display: block; font: 600 0.84rem var(--font-mono); overflow-wrap: anywhere; } .fp small { display: block; color: var(--muted); font-size: 0.74rem; overflow-wrap: anywhere; }
 .fn2 { display: grid; text-align: right; }
+.files-empty { padding: 10px 16px; color: var(--muted); }
 .filemain { overflow-y: auto; min-width: 0; background: var(--code-bg); }
 .fdiff { border-bottom: 6px solid var(--bg); }
 .fhead { position: sticky; top: 0; z-index: 3; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 9px 16px; background: var(--surface); border-bottom: 1px solid var(--line); }

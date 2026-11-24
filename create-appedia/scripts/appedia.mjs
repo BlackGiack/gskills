@@ -5,6 +5,7 @@ import { basename, dirname, join, resolve, relative, sep, isAbsolute } from "nod
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import vm from "node:vm";
+import { fileSources } from "./file-sources.mjs";
 import { gitInfo, inventory, inventoryDiff, makeImpact, makeIndex, readContent, sha } from "./impact.mjs";
 
 const args = Object.fromEntries(process.argv.slice(2).reduce((out, a, i, all) => a.startsWith("--") ? [...out, [a.slice(2), all[i + 1] !== undefined && !all[i + 1].startsWith("--") ? all[i + 1] : true]] : out, []));
@@ -17,7 +18,7 @@ const run = (cmd, argv, opts = {}) => {
   if (r.status !== 0) fail(`${cmd} ${argv.join(" ")} failed:\n${r.stderr || r.stdout}`);
   return r.stdout || "";
 };
-if (!["prepare", "rebuild", "finalize", "refresh-renderer"].includes(args.action)) fail("usage: node appedia.mjs --action prepare|rebuild|finalize|refresh-renderer --repo <repo> [--out <appedia>] [--lang go|python|ts] [--src dir] [--exclude a,b] [--python command] [--infra dir] [--test-evidence tests.json] [--jsdom dir]");
+if (!["prepare", "rebuild", "finalize", "refresh-renderer"].includes(args.action)) fail("usage: node appedia.mjs --action prepare|rebuild|finalize|refresh-renderer --repo <repo> [--out <appedia>] [--lang go|python|ts] [--src dir] [--exclude a,b] [--python command] [--infra dir] [--test-evidence tests.json] [--jsdom dir] [--require-coverage]");
 
 function loadJs(path, key) {
   const ctx = { window: {} }; vm.runInNewContext(readFileSync(path, "utf8"), ctx, { timeout: 1000 });
@@ -60,7 +61,7 @@ function toolchain(config) {
   return t;
 }
 function toolsFingerprint(config) {
-  const files = ["build.mjs", "impact.mjs", "appedia.mjs", "dependencies.py", "testing.mjs", "test-evidence.py", config.language === "go" ? "extract-go/main.go" : config.language === "python" ? "extract-python/extract.py" : "extract-ts/extract.mjs"];
+  const files = ["build.mjs", "file-sources.mjs", "impact.mjs", "appedia.mjs", "dependencies.py", "testing.mjs", "test-evidence.py", config.language === "go" ? "extract-go/main.go" : config.language === "python" ? "extract-python/extract.py" : "extract-ts/extract.mjs"];
   if (config.infra) files.push("extract-terraform/extract.py");
   return sha(JSON.stringify(files.map(f => [f, sha(readFileSync(join(skill, f)))])));
 }
@@ -95,15 +96,28 @@ function extract(config) {
 function settingChanges(current, previous) { return previous ? Object.keys(current).filter(k => current[k] !== previous[k]).map(k => ({ file: `settings:${k}`, status: "changed" })) : []; }
 function writeReport(report) {
   writeFileSync(join(pending, "impact.json"), JSON.stringify(report, null, 2) + "\n");
-  const lines = ["# Appedia update review", "", `Input changes: ${report.files.length}; model changes: ${report.changes.length}`, "", "## Review items", ""];
-  if (!report.items.length) lines.push("No existing content item is implicated by the model or source changes.");
-  for (const item of report.items) lines.push(`- [ ] **${item.id}** — ${item.reasons.join("; ")} (set disposition to updated, unchanged or removed; explain unchanged items)`);
+  const lines = ["# Appedia update review", "", `${report.files.length} input changes, ${report.changes.length} model changes, ${report.items.length} review items.`, ""];
+  if (report.items.length) {
+    const groups = new Map();
+    for (const item of report.items) {
+      const kind = item.id.split(":")[0];
+      groups.set(kind, (groups.get(kind) || 0) + 1);
+    }
+    const limit = 20;
+    for (const [kind, count] of groups) lines.push(`- ${kind} (${count})`);
+    lines.push("", "Full records and dispositions are in `impact.json`.", "");
+    for (const item of report.items.slice(0, limit)) lines.push(`- \`${item.id}\` · ${item.reasons[0] || ""}`);
+    if (report.items.length > limit) lines.push(`- ${report.items.length - limit} more items in \`impact.json\`.`);
+  }
   if (report.legacy) lines.push("", "## Baseline limits", "", report.legacy);
   writeFileSync(join(pending, "impact.md"), lines.join("\n") + "\n");
 }
 function build() {
   const { code, infra } = loadModels();
-  const argv = [join(skill, "build.mjs"), "--model", join(pending, "model.json"), "--content", contentPath, "--out", out];
+  const candidate = JSON.parse(readFileSync(join(pending, "candidate.json"), "utf8"));
+  const inventoryPath = join(pending, "repository-files.json");
+  writeFileSync(inventoryPath, JSON.stringify(candidate.files));
+  const argv = [join(skill, "build.mjs"), "--repo", repo, "--file-inventory", inventoryPath, "--model", join(pending, "model.json"), "--content", contentPath, "--out", out];
   if (existsSync(join(pending, "dependencies.json"))) argv.push("--dependencies", join(pending, "dependencies.json"));
   if (args["test-evidence"]) argv.push("--test-evidence", resolve(args["test-evidence"]));
   else if (existsSync(join(pending, "test-evidence.json"))) argv.push("--test-evidence", join(pending, "test-evidence.json"));
@@ -122,6 +136,17 @@ if (args.action === "refresh-renderer") {
   writeFileSync(join(out, "index.html"), `<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n${shell.replace("<header", "</head>\n<body>\n<header")}\n</body>\n</html>\n`);
   writeFileSync(join(out, "artifact.html"), shell);
   for (const f of ["appedia.js", "appedia.css", "tests.js", "tests.css"]) copyFileSync(join(assets, f), join(out, f));
+  const modelPath = join(out, "data", "model.js");
+  const model = loadJs(modelPath, "APPEDIA_MODEL");
+  if (!model.fileSources) {
+    const baseline = existsSync(baselinePath) ? JSON.parse(readFileSync(baselinePath, "utf8")) : null;
+    const hashes = baseline?.version === 1 && !existsSync(join(pending, "candidate.json")) ? baseline.files : null;
+    if (hashes && !model.repositoryFiles) model.repositoryFiles = Object.keys(hashes).sort();
+    const repository = fileSources(repo, out, hashes ? model.repositoryFiles : [], hashes);
+    // A legacy site with no recorded hashes can link to originals without importing newer contents.
+    Object.assign(model, repository);
+    writeFileSync(modelPath, `window.APPEDIA_MODEL = ${JSON.stringify(model)};\n`);
+  }
   console.log(`renderer refreshed: ${out}`);
 } else if (args.action === "prepare") {
   const cfg = settings();
@@ -171,7 +196,7 @@ if (args.action === "refresh-renderer") {
   if (candidate.tools !== toolsFingerprint(candidate.settings) || JSON.stringify(candidate.toolchain) !== JSON.stringify(toolchain(candidate.settings))) fail("extractor, runtime or diagram tools changed after prepare; run prepare again");
   if (candidate.modelDigest !== sha(readFileSync(join(pending, "model.json"))) || (candidate.infraDigest && candidate.infraDigest !== sha(readFileSync(join(pending, "infra.json"))))) fail("pending extracted models changed after prepare; run prepare again");
   build();
-  run("node", [join(skill, "smoke.mjs"), "--site", out, "--jsdom", args.jsdom]);
+  run("node", [join(skill, "smoke.mjs"), "--site", out, "--jsdom", args.jsdom, ...("require-coverage" in args ? ["--require-coverage"] : [])]);
   mkdirSync(state, { recursive: true });
   const { code, infra } = loadModels();
   writeFileSync(join(state, "baseline-model.json"), JSON.stringify(code));

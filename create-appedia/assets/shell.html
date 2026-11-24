@@ -8,6 +8,7 @@
 <header class="top">
   <button class="brand" id="brand" type="button">{{APP}} <span>appedia</span></button>
   <nav class="modes" aria-label="Modes">
+    <button type="button" data-mode="presentation">Presentation</button>
     <button type="button" data-mode="explore">Explore</button>
     <button type="button" data-mode="infra" hidden>Infrastructure</button>
     <button type="button" data-mode="dependencies">Dependencies</button>
@@ -26,6 +27,9 @@
 </header>
 
 <main>
+  <section class="mode" id="mode-presentation" aria-label="Presentation">
+    <article class="page presentation" id="presentation"></article>
+  </section>
   <section class="mode" id="mode-explore" aria-label="Explore">
     <nav class="crumbs" id="crumbs" aria-label="Breadcrumb"></nav>
     <div class="explore">

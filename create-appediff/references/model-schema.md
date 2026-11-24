@@ -161,3 +161,10 @@ Managed extraction pipelines also attach `testFingerprints` to bind collected
 source state to this model (`head`, and `base` on a merged diff model). An unbound
 legacy model cannot establish coverage-profile provenance. This metadata does
 not alter symbol extraction or imply functional test coverage.
+
+## Filesystem map and review brief
+
+Changed files in `APPEDIA_DIFF.files` supply the filesystem tree and file
+links. A cross-folder rename uses `old` and `path` for its map positions.
+Both positions open the diff at `path`. The pipeline writes a compact review
+brief and full build log alongside its inputs in `.work/`.

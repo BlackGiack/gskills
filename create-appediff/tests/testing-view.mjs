@@ -59,7 +59,12 @@ const modelPaths = Object.values(w.APPEDIA_MODEL.packages).map(p=>p.importPath |
 const coverage = (fingerprint, covered) => ({ eligible:true, fingerprint, revision:fingerprint, command:'go test -cover ./...', collectedAt:'2026-11-01', scope:'./...', mode:'atomic', metric:'statements', result:'passed', packages:[{path:modelPaths[0],covered,statements:10}] });
 w.APPEDIA_MODEL.testing.coverage = { head:coverage('head',0),base:coverage('base',5),comparable:true };
 await go('tests-coverage'); assert.match(d.querySelector('.test-coverage-summary').textContent,/0.0%/);
-if (w.APPEDIA_DIFF) assert.match(d.querySelector('.test-coverage-summary').textContent,/-50.0 pp/);
+if (w.APPEDIA_DIFF) {
+  assert.match(d.querySelector('.test-coverage-summary').textContent,/-50.0 pp/);
+  w.APPEDIA_MODEL.testing.coverage.head.packages[0].covered = 8;
+  w.APPEDIA_TEST_UI.render('tests-coverage');
+  assert.match(d.querySelector('.test-coverage-summary').textContent,/\+30.0 pp/);
+}
 let input=d.getElementById('test-package-search');input.value='no such package';input.dispatchEvent(new w.Event('input'));assert.match(d.querySelector('tbody').textContent,/No packages match/);
 w.APPEDIA_MODEL.testing.coverage.head.eligible=false;w.APPEDIA_MODEL.testing.coverage.comparable=false;w.APPEDIA_TEST_UI.render('tests-coverage');assert.equal(d.querySelectorAll('.test-coverage-summary > div strong')[w.APPEDIA_DIFF ? 1 : 0].textContent,'Not collected');
 w.APPEDIA_MODEL.testing.coverage={};w.APPEDIA_TEST_UI.render('tests-coverage');assert.match(d.querySelector('#mode-tests').textContent,/No coverage profiles/);

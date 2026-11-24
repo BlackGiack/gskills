@@ -119,18 +119,22 @@ export function makeIndex(content, model, infra = null) {
   return { version: 1, items: items.sort((a, b) => `${a.kind}:${a.id}`.localeCompare(`${b.kind}:${b.id}`)), digest: sha(JSON.stringify(items)) };
 }
 
-export function inventory(root, { exclude = [], output = "appedia", outputExtra = [] } = {}) {
+export function inventory(root, { exclude = [], output = "appedia", outputExtra = [], snapshot = false } = {}) {
   root = resolve(root);
-  const ignored = new Set([".git", "node_modules", "vendor", ".venv", "venv", "dist", "build", "coverage", ".next", ".turbo", ".maintenance", ...exclude]);
+  const ignored = new Set([".git", "node_modules", "vendor", ".venv", "venv", "dist", "build", "coverage", ".next", ".turbo", ".maintenance"]);
+  const prefixes = [output, ...outputExtra, "tmp/appediff", ...exclude.filter(path => path.includes("/"))]
+    .filter(Boolean).map(path => path.replace(/\/$/, ""));
+  for (const name of exclude) if (!name.includes("/")) ignored.add(name);
+  const excluded = path => prefixes.some(prefix => path === prefix || path.startsWith(prefix + "/"))
+    || path.split("/").some(part => ignored.has(part));
   const files = [];
   const addFile = rel => {
     const norm = rel.split(sep).join("/");
-    if ([output, ...outputExtra].some(prefix => prefix && (norm === prefix.replace(/\/$/, "") || norm.startsWith(prefix.replace(/\/$/, "") + "/"))) || norm === "tmp/appediff" || norm.startsWith("tmp/appediff/") || norm.split("/").some(part => ignored.has(part))) return;
+    if (excluded(norm)) return;
     const abs = join(root, rel);
     if (existsSync(abs) && lstatSync(abs).isFile()) files.push([norm, sha(readFileSync(abs))]);
   };
-  try {
-    const gitRoot = execFileSync("git", ["-C", root, "rev-parse", "--show-toplevel"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+  if (!snapshot) try {
     // git -C runs from root, so ls-files paths are already relative to this tree.
     const listed = execFileSync("git", ["-C", root, "ls-files", "--cached", "--others", "--exclude-standard", "-z"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
     for (const rel of listed.split("\0").filter(Boolean)) addFile(rel);
@@ -139,7 +143,7 @@ export function inventory(root, { exclude = [], output = "appedia", outputExtra 
   const addTree = dir => {
     for (const ent of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
       const abs = join(dir, ent.name), rel = relative(root, abs).split(sep).join("/");
-      if ([output, ...outputExtra].some(prefix => prefix && (rel === prefix.replace(/\/$/, "") || rel.startsWith(prefix.replace(/\/$/, "") + "/"))) || rel === "tmp/appediff" || rel.startsWith("tmp/appediff/") || ignored.has(ent.name)) continue;
+      if (excluded(rel)) continue;
       if (ent.isDirectory()) addTree(abs);
       else if (ent.isFile()) addFile(rel);
     }

@@ -17,6 +17,7 @@ import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 import { makeIndex } from "./impact.mjs";
+import { fileSources } from "./file-sources.mjs";
 import { prepareTesting } from "./testing.mjs";
 
 const args = Object.fromEntries(process.argv.slice(2).reduce((acc, a, i, all) => (a.startsWith("--") ? [...acc, [a.slice(2), all[i + 1]]] : acc), []));
@@ -26,11 +27,22 @@ vm.runInNewContext(readFileSync(args.content, "utf8"), ctx);
 const content = ctx.window.APPEDIA_CONTENT;
 const out = args.out;
 const assets = args.assets || join(dirname(fileURLToPath(import.meta.url)), "..", "assets");
-if (!args.model || !args.content || !out) { console.error("usage: node build.mjs --model model.json --content content.js --out dir [--infra-model infra.json] [--dependencies dependencies.json] [--test-evidence tests.json] [--assets dir]"); process.exit(2); }
+if (!args.model || !args.content || !out) { console.error("usage: node build.mjs --model model.json --content content.js --out dir [--infra-model infra.json] [--dependencies dependencies.json] [--repo dir] [--file-inventory paths.json] [--test-evidence tests.json] [--assets dir]"); process.exit(2); }
 const infraModel = args["infra-model"] ? JSON.parse(readFileSync(args["infra-model"], "utf8")) : null;
 const infraContent = content.infra || {};
 const dependencies = args.dependencies ? JSON.parse(readFileSync(args.dependencies, "utf8")) : model.dependencies || null;
 
+const fileInventory = args["file-inventory"] ? JSON.parse(readFileSync(args["file-inventory"], "utf8")) : model.repositoryFiles;
+const fileHashes = fileInventory && !Array.isArray(fileInventory) && typeof fileInventory === "object" ? fileInventory : null;
+const repositoryFiles = fileHashes ? Object.keys(fileHashes) : fileInventory;
+if (repositoryFiles !== undefined && (!Array.isArray(repositoryFiles) || repositoryFiles.some(path =>
+  typeof path !== "string" || path.split("/").some(part => !part || part === "." || part === "..")))) {
+  console.error("--file-inventory must contain repository-relative paths or an object keyed by those paths");
+  process.exit(2);
+}
+const knownFiles = Object.values(model.packages).flatMap(pkg => (pkg.files || []).map(file =>
+  pkg.path && pkg.path !== "." ? pkg.path + "/" + file.name : file.name));
+const repository = args.repo ? fileSources(args.repo, out, repositoryFiles || knownFiles, fileHashes) : {};
 const sourceModel = structuredClone(model), sourceInfraModel = infraModel ? structuredClone(infraModel) : null;
 
 /* ---------- fold away packages that declare nothing ----------
@@ -352,7 +364,7 @@ function autoMapFor(m, mapContent, pkgContent) {
 const autoMap = autoMapFor(model, content.map, content.packages);
 
 /* ---------- write ---------- */
-const packed = { ...model, testing: testing.data, dependencies, folded, layouts, flowLayouts, autoMap, builtAt: new Date().toISOString() };
+const packed = { ...model, ...repository, repositoryFiles: repositoryFiles && [...new Set(repositoryFiles)].sort(), testing: testing.data, dependencies, folded, layouts, flowLayouts, autoMap, builtAt: new Date().toISOString() };
 writeFileSync(join(out, "data", "model.js"), "window.APPEDIA_MODEL = " + JSON.stringify(packed) + ";\n");
 let infraDiagrams = 0;
 if (infraModel) {

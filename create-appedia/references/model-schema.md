@@ -135,3 +135,10 @@ Managed extraction pipelines also attach `testFingerprints` to bind collected
 source state to this model (`head`, and `base` on a merged diff model). An unbound
 legacy model cannot establish coverage-profile provenance. This metadata does
 not alter symbol extraction or imply functional test coverage.
+
+## Filesystem map
+
+The packed code model may contain `repositoryFiles`, a sorted array of
+repository-relative paths captured from the prepared inventory. The renderer
+derives the directory tree from these paths. Without an inventory the map uses
+package file paths already present in the model. When the generator has a repository checkout, the model also carries `repositoryRoot` relative to the output directory and `fileSources` keyed by repository-relative path. The file reader uses snapshot text and offers a link to the original on disk.

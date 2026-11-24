@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Add a Test files toggle to the filesystem map.
+- Require current code coverage for completed snapshots and add a coverage check to finalization.
+- Added Presentation and a full-width Explore map switch with an expandable filesystem tree and one scrollable file list per folder. Ctrl+click focuses a folder, and selecting a filename opens its snapshot.
+- Highlight Go, Python, JavaScript, TypeScript, and HCL in the filesystem reader.
+- Show free Go functions alongside types and use the prepared inventory when rebuilding.
+- Condensed the skill entrypoint and update review queue.
+
 Newest first. Note anything that changes the content format or the commands
 people run, and how to migrate (see CONTRIBUTING.md, constraint 12).
 

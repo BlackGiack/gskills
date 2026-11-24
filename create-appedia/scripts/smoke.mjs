@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const args = Object.fromEntries(process.argv.slice(2).reduce((acc, a, i, all) => (a.startsWith("--") ? [...acc, [a.slice(2), all[i + 1]]] : acc), []));
-if (!args.site) { console.error("usage: node smoke.mjs --site <appedia dir> [--jsdom <dir where jsdom is installed>]"); process.exit(2); }
+if (!args.site) { console.error("usage: node smoke.mjs --site <appedia dir> [--jsdom <dir where jsdom is installed>] [--require-coverage]"); process.exit(2); }
 let jsdomPath = "jsdom";
 if (args.jsdom) jsdomPath = pathToFileURL(createRequire(join(args.jsdom, "package.json")).resolve("jsdom")).href;
 const { JSDOM, VirtualConsole } = await import(jsdomPath);
@@ -41,10 +41,30 @@ const dom = new JSDOM(html, {
 });
 const w = dom.window, d = w.document, M = w.APPEDIA_MODEL, C = w.APPEDIA_CONTENT, MI = w.APPEDIA_INFRA;
 if (!M || !C) { console.error("model.js or content.js did not load:\n" + errors.join("\n")); process.exit(1); }
+if ("require-coverage" in args) {
+  const coverage = M.testing?.coverage;
+  const head = coverage?.head;
+  const hasStatements = side => side?.packages.some(row => row.statements > 0);
+  if (!head?.eligible || head.result !== "passed" || !hasStatements(head)) {
+    console.error("Code coverage requires a passing head profile bound to the reviewed snapshot.");
+    process.exit(1);
+  }
+  if (w.APPEDIA_DIFF && (!coverage.comparable || !hasStatements(coverage.base))) {
+    console.error("Code coverage variation requires passing, comparable base and head profiles.");
+    process.exit(1);
+  }
+}
 const tick = () => new Promise(r => setTimeout(r, 2));
 const checks = {
   map: () => d.querySelectorAll("#stage .node").length ? null : "the map has no nodes",
-  pkg: () => d.querySelector("#panel h2") ? null : "no package panel",
+  pkg: route => {
+    if (!d.querySelector("#panel h2")) return "no package panel";
+    const pkg = route.startsWith("infra/") ? MI?.packages[route.slice(10)] : M.packages[route.slice(4)];
+    if (Object.values(pkg?.funcs || {}).some(fn => fn.name !== "init" || M.language !== "go")
+        && !d.querySelector('#stage g[aria-label^="function "]')) return "no free-function card";
+    return null;
+  },
+  filesystem: () => d.querySelector('#stage [data-kind="folder"]') ? null : "no filesystem root",
   type: () => d.querySelector("pre.src .ln") ? null : "no code shown",
   fn: () => d.querySelector("pre.src .ln") ? null : "no code shown",
   focus: () => {
@@ -60,7 +80,8 @@ const checks = {
   flow: () => d.querySelector("svg.seq .row.on") ? null : "no active step"
 };
 checks.mapfocus = checks.focus;
-const routes = ["map", "rules", "tasks", "ref"];
+checks.presentation = () => d.querySelector("#presentation h1") ? null : "no project presentation";
+const routes = ["map", "presentation", "filesystem", "rules", "tasks", "ref"];
 routes.push("dependencies");
 routes.push("tests", "tests-coverage");
 for (const feature of M.testing?.features || []) { routes.push("tests-" + feature.id); for (const scenario of feature.scenarios) routes.push(`tests-${feature.id}/${scenario.id}`); }
@@ -73,7 +94,7 @@ for (const id of new Set([...Object.keys(M.packages), ...Object.keys(C.packages 
 let nTypes = 0, nFns = 0;
 for (const [pid, p] of Object.entries(M.packages)) {
   for (const t of Object.values(p.types)) { nTypes++; routes.push(`type-${pid}.${t.name}`, `focus-${pid}.${t.name}`, `focus-${pid}.${t.name}.2`); for (const m of (t.methods || []).slice(0, 3)) routes.push(`type-${pid}.${t.name}.${m}`); }
-  for (const f of Object.keys(p.funcs)) if (!f.startsWith("init")) { nFns++; routes.push(`fn-${pid}.${f}`); }
+  for (const f of Object.keys(p.funcs)) if (!f.startsWith("init@")) { nFns++; routes.push(`fn-${pid}.${f}`); }
 }
 for (const [id, f] of Object.entries(C.flows || {})) f.steps.forEach((_, i) => routes.push(`flow-${id}.${i}`));
 const mapNodes = Object.keys((C.map && C.map.nodes && Object.keys(C.map.nodes).length ? C.map.nodes : (M.autoMap || {}).nodes) || {});
@@ -89,15 +110,127 @@ if (MI) {
 async function visit(list, tag) {
   for (const r of list) {
     const before = errors.length;
-    w.location.hash = r;
+    w.location.hash = r.startsWith("file-") ? "file-" + encodeURIComponent(r.slice(5)) : r;
     await tick();
     const kind = r.replace(/^infra\//, "").split("-")[0];
-    const msg = checks[kind] && checks[kind]();
+    const msg = checks[kind] && checks[kind](r);
     if (msg) errors.push(`#${r}${tag}: ${msg}`);
     if (errors.length > before && !msg) errors[errors.length - 1] = `#${r}${tag}: ` + errors[errors.length - 1];
   }
 }
 await visit(routes, "");
+await visit(["map"], "");
+if (!d.querySelector("#mode-explore .explore.wide")) errors.push("#map: code map is not full width");
+d.querySelector('[data-map="filesystem"]')?.click();
+await tick();
+const expand = node => node.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Enter" }));
+if (!d.querySelector('[data-map="filesystem"][aria-current="page"]') || !d.querySelector("#mode-explore .explore.wide")) {
+  errors.push("#filesystem: the map switch did not open a full-width filesystem");
+}
+const folder = d.querySelector('#stage [data-kind="folder"][aria-expanded="false"]');
+if (folder) {
+  const path = folder.dataset.path;
+  expand(folder);
+  const isOpen = () => [...d.querySelectorAll('#stage [aria-expanded="true"]')].some(node => node.dataset.path === path);
+  if (!isOpen()) errors.push("#filesystem: folder did not expand");
+  d.querySelector('[data-map="map"]').click();
+  await tick();
+  d.querySelector('[data-map="filesystem"]').click();
+  await tick();
+  if (!isOpen()) errors.push("#filesystem: folder expansion lost on map switch");
+}
+
+const filesByFolder = new Map();
+const paths = M.repositoryFiles || Object.values(M.packages).flatMap(pkg =>
+  (pkg.files || []).map(file => pkg.path && pkg.path !== "." ? pkg.path + "/" + file.name : file.name));
+for (const path of paths) {
+  const folderPath = path.slice(0, Math.max(0, path.lastIndexOf("/")));
+  if (!filesByFolder.has(folderPath)) filesByFolder.set(folderPath, new Set());
+  filesByFolder.get(folderPath).add(path);
+}
+const exampleFolder = [...filesByFolder].find(([path, files]) => path && files.size > 1)?.[0]
+  || [...filesByFolder.keys()].find(path => path);
+const openFolderPath = folderPath => {
+  if (!folderPath) return;
+  const parts = folderPath.split("/");
+  for (let end = 1; end <= parts.length; end++) {
+    const path = parts.slice(0, end).join("/");
+    const node = [...d.querySelectorAll('#stage [data-kind="folder"]')].find(n => n.dataset.path === path);
+    if (!node) { errors.push("#filesystem: missing folder " + path); break; }
+    if (node.getAttribute("aria-expanded") === "false") expand(node);
+  }
+};
+openFolderPath(exampleFolder);
+const testFile = paths.find(path => path.endsWith("_test.go"));
+if (testFile) {
+  const folderPath = testFile.slice(0, Math.max(0, testFile.lastIndexOf("/")));
+  openFolderPath(folderPath);
+  const testButton = () => [...d.querySelectorAll("#stage button[data-file]")].find(node => node.dataset.file === testFile);
+  const toggle = () => d.querySelector("#stage button[data-test-files]");
+  if (!testButton() || toggle()?.getAttribute("aria-pressed") !== "true") {
+    errors.push("#filesystem: test files should be visible by default");
+  } else {
+    toggle().click();
+    if (testButton() || toggle()?.getAttribute("aria-pressed") !== "false") errors.push("#filesystem: test files did not hide");
+    toggle().click();
+    if (!testButton() || toggle()?.getAttribute("aria-pressed") !== "true") errors.push("#filesystem: test files did not return");
+  }
+}
+const folders = [...d.querySelectorAll('#stage [data-kind="folder"]')];
+const cards = [...d.querySelectorAll('#stage [data-kind="files"]')];
+for (const node of folders) {
+  const path = node.dataset.path;
+  const expected = (!path || node.getAttribute("aria-expanded") === "true") && filesByFolder.get(path);
+  const matching = cards.filter(card => card.dataset.path === path);
+  const buttons = matching.flatMap(card => [...card.querySelectorAll("button[data-file]")]);
+  if (matching.length !== (expected ? 1 : 0) || buttons.length !== (expected?.size || 0)
+      || buttons.some(button => !expected?.has(button.dataset.file))) {
+    errors.push("#filesystem: expected one file list for each open folder with direct files: " + path);
+  }
+}
+if (d.querySelector('#stage [data-kind="file"]')) errors.push("#filesystem: found a separate leaf for one file");
+const focusFolder = folders.find(node => node.dataset.path && filesByFolder.has(node.dataset.path) && node.getAttribute("aria-expanded") === "true");
+if (focusFolder) {
+  const path = focusFolder.dataset.path;
+  focusFolder.dispatchEvent(new w.MouseEvent("click", { bubbles: true, ctrlKey: true }));
+  for (let i = 0; i < 20 && !w.location.hash.startsWith("#folder-"); i++) {
+    await new Promise(resolve => setTimeout(resolve, 25));
+  }
+  await tick();
+  if (d.querySelector("#stage .node.focal")?.dataset.path !== path
+      || [...d.querySelectorAll('#stage [data-kind="folder"]')].some(node => node.dataset.path !== path && !node.dataset.path.startsWith(path + "/"))) {
+    errors.push("#filesystem: Ctrl+click did not isolate the selected folder");
+  }
+}
+const fileButton = d.querySelector('#stage [data-kind="files"] button[data-file]');
+if (fileButton) {
+  const path = fileButton.dataset.file;
+  fileButton.click();
+  await tick();
+  if (d.querySelector("#stage .fs-reader h1")?.textContent !== path) {
+    errors.push("#filesystem: file selection did not open the file");
+  }
+  const source = Object.hasOwn(M.fileSources || {}, path) ? M.fileSources[path] : undefined;
+  if (typeof source === "string" && d.querySelector("#stage .fs-reader-source")?.textContent !== source) {
+    errors.push("#filesystem: the file reader did not show the recorded text");
+  }
+  if (typeof source === "string" && /\.(go|pyi?|[cm]?[jt]s|[jt]sx|hcl|tf|tfvars)$/i.test(path)
+      && !d.querySelector("#stage .fs-reader-source.src .ln")) errors.push("#filesystem: missing syntax view for " + path);
+  if (M.repositoryRoot && !d.querySelector("#stage .fs-reader a")?.href.endsWith(path.split("/").map(encodeURIComponent).join("/"))) {
+    errors.push("#filesystem: the file reader did not link to the original");
+  }
+  d.body.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  await tick();
+  if (!(focusFolder ? w.location.hash.startsWith("#folder-") : w.location.hash === "#filesystem")) {
+    errors.push("#filesystem: Escape from file did not restore the map");
+  }
+}
+if (focusFolder) {
+  d.body.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  await tick();
+  if (w.location.hash !== "#filesystem") errors.push("#filesystem: Escape did not exit folder focus");
+}
+
 // with data flow, the diagrams have a second mode: switch to it and visit the diagrams again
 let flowVisits = 0;
 const anyFlow = m => m && ((m.dataflow || []).length || ((m.autoMap || {}).flowEdges || []).length);

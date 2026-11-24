@@ -47,7 +47,17 @@
   // explore routes stay in the current space; "code/…" and "infra/…" jump between spaces
   const EXPLORE_ROUTE = /^(map$|mapfocus-|pkg-|focus-|type-|fn-)/;
   const fullRoute = route => route.startsWith("code/") ? route.slice(5) : route.startsWith("infra/") ? route : SPACE === "infra" && EXPLORE_ROUTE.test(route) ? "infra/" + route : route;
-  const go = route => { const r = fullRoute(route); if (location.hash !== "#" + r) location.hash = r; else render(); };
+  const FILESYSTEM_ROUTE = /^(filesystem$|folder-|file-)/;
+  const encodePath = path => path.split("/").map(encodeURIComponent).join("/");
+  const hashRoute = () => {
+    const hash = location.hash.slice(1);
+    try { return decodeURIComponent(hash); } catch { return hash; }
+  };
+  const go = route => {
+    const r = fullRoute(route);
+    const hash = FILESYSTEM_ROUTE.test(r) && r !== "filesystem" ? r.slice(0, r.indexOf("-") + 1) + encodePath(r.slice(r.indexOf("-") + 1)) : r;
+    if (location.hash !== "#" + hash) location.hash = hash; else render();
+  };
 
   /* ---------- model lookups ---------- */
   // Identifiers from code ("constructor", "toString") must never hit an
@@ -176,6 +186,16 @@
     return {
       wasDrag: () => moved,
       fit: () => animateTo(home, 260),
+      refit(bounds, offsetY, reveal) {
+        home = { ...bounds };
+        vb.y += offsetY;
+        if (reveal) {
+          if (reveal.right > vb.x + vb.w) vb.x = Math.max(vb.x, Math.min(reveal.left, reveal.right - vb.w));
+          vb.y = Math.min(vb.y, reveal.top);
+          if (reveal.bottom > vb.y + vb.h) vb.y = reveal.bottom - vb.h;
+        }
+        apply();
+      },
       zoom: f => zoomAt(f),
       set: r => { vb = { ...r }; apply(); },
       animateTo,
@@ -193,7 +213,7 @@
   let zoomOutFrom = null;
 
   /* ---------- router ---------- */
-  const modes = { tests: $("#mode-tests"), dependencies: $("#mode-dependencies"), explore: $("#mode-explore"), flows: $("#mode-flows"), rules: $("#mode-rules"), tasks: $("#mode-tasks"), ref: $("#mode-ref") };
+  const modes = { presentation: $("#mode-presentation"), tests: $("#mode-tests"), dependencies: $("#mode-dependencies"), explore: $("#mode-explore"), flows: $("#mode-flows"), rules: $("#mode-rules"), tasks: $("#mode-tasks"), ref: $("#mode-ref") };
   const firstFlow = C.flowGroups.length ? C.flowGroups[0].flows[0] : Object.keys(C.flows)[0];
   let lastExplore = "map", lastInfra = "infra/map", lastFlow = firstFlow ? "flow-" + firstFlow : "flow-";
   // point every space-dependent lookup at the code or the infrastructure
@@ -221,11 +241,12 @@
   }
   if (MODEL_INFRA) { const b = document.querySelector('.modes button[data-mode="infra"]'); if (b) b.hidden = false; }
   function render() {
-    const h = decodeURIComponent(location.hash.slice(1)) || "map";
+    const h = hashRoute() || "map";
     closeSearch();
     if (h.startsWith("infra/") && MODEL_INFRA) { bindSpace("infra"); lastInfra = h; setMode("explore", "infra"); renderExplore(h.slice(6) || "map"); return; }
     bindSpace("code");
-    if (h === "map" || h.startsWith("mapfocus-") || h.startsWith("pkg-") || h.startsWith("focus-") || h.startsWith("type-") || h.startsWith("fn-")) { lastExplore = h; setMode("explore"); renderExplore(h); }
+    if (FILESYSTEM_ROUTE.test(h) || EXPLORE_ROUTE.test(h)) { lastExplore = h; setMode("explore"); renderExplore(h); }
+    else if (h === "presentation") { setMode("presentation"); renderIntroPanel($("#presentation")); }
     else if (h.startsWith("flow-")) { lastFlow = h; setMode("flows"); renderFlows(h.slice(5)); }
     else if (h === "rules" || h.startsWith("rule-")) { setMode("rules"); renderRules(h.startsWith("rule-") ? h.slice(5) : null); }
     else if (h === "tests" || h.startsWith("tests-")) { setMode("tests"); window.APPEDIA_TEST_UI.render(h); }
@@ -258,14 +279,218 @@
     crumbs.append(lv);
   }
   function renderExplore(h) {
-    exploreGrid.classList.toggle("wide", h.startsWith("type-") || h.startsWith("fn-"));
-    stage.classList.toggle("symmode", h.startsWith("type-") || h.startsWith("fn-"));
+    const filesystem = SPACE === "code" && FILESYSTEM_ROUTE.test(h);
+    const file = filesystem && h.startsWith("file-");
+    const symbol = h.startsWith("type-") || h.startsWith("fn-");
+    exploreGrid.classList.toggle("wide", filesystem || (SPACE === "code" && h === "map") || symbol);
+    stage.classList.toggle("symmode", symbol || file);
     if (h === "map") return renderMap();
+    if (filesystem) return file ? renderRepositoryFile(h.slice(5)) : renderFilesystem(h === "filesystem" ? "" : h.slice(7));
     if (h.startsWith("mapfocus-")) { const [pk, depth] = h.slice(9).split("."); return renderMapFocus(pk, depth === "2" ? 2 : 1); }
     if (h.startsWith("pkg-")) return renderPackage(h.slice(4));
     if (h.startsWith("focus-")) { const [pkg, type, depth] = h.slice(6).split("."); return renderFocus(pkg + "." + type, depth === "2" ? 2 : 1); }
     if (h.startsWith("type-")) { const [pkg, type, member] = h.slice(5).split("."); return renderType(pkg, type, member); }
     if (h.startsWith("fn-")) { const [pkg, fn] = h.slice(3).split("."); return renderFunc(pkg, fn); }
+  }
+
+  const openFolders = new Set([""]);
+  let folderFocus = "";
+  const testFilesKey = "appedia-filesystem-tests:" + (MODEL_CODE.module || C_CODE.app);
+  let showTestFiles = true;
+  try { showTestFiles = localStorage.getItem(testFilesKey) !== "hide"; } catch (e) { /* storage may be blocked */ }
+
+  function isTestFile(path) {
+    const name = path.split("/").at(-1);
+    if (/_test\.go$|^test_.*\.py$|_test\.py$|[._](?:test|spec)\.[cm]?[jt]sx?$|\.tftest\.(?:hcl|json)$/.test(name)) return true;
+    return /(?:^|\/)(?:tests?|__tests__)\//.test(path) && /\.(?:go|py|[cm]?[jt]s|[jt]sx|tf)$/.test(name);
+  }
+  function setMapCrumbs(active, path = "", parentRoute) {
+    crumbs.replaceChildren(el("span", { class: "here", text: C.app }));
+    for (const [route, label] of [["map", "package map"], ["filesystem", "filesystem map"]]) {
+      crumbs.append(el("span", { class: "sep", "aria-hidden": "true", text: "·" }),
+        el("button", { type: "button", "data-map": route, "aria-current": route === active && !path ? "page" : null,
+          onclick: () => go("code/" + route) }, label));
+    }
+    if (parentRoute) crumbs.append(el("span", { class: "sep", "aria-hidden": "true", text: "›" }),
+      el("button", { type: "button", onclick: () => go(parentRoute) }, parentRoute.slice(7)));
+    if (path) crumbs.append(el("span", { class: "sep", "aria-hidden": "true", text: "›" }),
+      el("span", { class: "here", "aria-current": "page", text: path }));
+  }
+
+  function filesystemTree(paths, rootPath) {
+    const folder = path => ({ path, children: new Map(), files: new Set() });
+    const root = folder(rootPath);
+    const prefix = rootPath ? rootPath.length + 1 : 0;
+    for (const path of paths) {
+      const parts = path.slice(prefix).split("/");
+      const name = parts.pop();
+      let parent = root;
+      for (const part of parts) {
+        if (!parent.children.has(part)) {
+          parent.children.set(part, folder(parent.path ? parent.path + "/" + part : part));
+        }
+        parent = parent.children.get(part);
+      }
+      parent.files.add(name);
+    }
+    return root;
+  }
+
+  function renderFilesystem(focusedPath = "") {
+    zoomOutFrom = null;
+    const repositoryPaths = MODEL_CODE.repositoryFiles || [...projectFilePaths(MODEL_CODE).keys()];
+    const folderPaths = focusedPath ? repositoryPaths.filter(path => path.startsWith(focusedPath + "/")) : repositoryPaths;
+    if (focusedPath && !folderPaths.length) { go("filesystem"); return; }
+    const paths = showTestFiles ? folderPaths : folderPaths.filter(path => !isTestFile(path));
+    const root = filesystemTree(paths, focusedPath);
+    folderFocus = focusedPath;
+    setMapCrumbs("filesystem", focusedPath);
+    const svg = sv("svg", { class: "canvas fade", role: "group", "aria-label": "Filesystem map" });
+    const hint = el("div", { class: "hint fs-hint", "aria-live": "polite", text: paths.length
+      ? "Ctrl+click to focus. Select a file to open it."
+      : folderPaths.length ? "All files here are hidden by the test file filter." : "No files to display." });
+    const controls = el("div", { class: "fs-controls" }, hint);
+    stage.replaceChildren(svg, controls);
+    let pz;
+    const folderWidth = 158, folderHeight = 48, filesWidth = 192, column = 238, gap = 22;
+    function fileCard({ path, names }, x, y, height) {
+      const title = names.length === 1 ? "1 file" : `${names.length} files`;
+      const list = el("ul", {}, names.map(name => {
+        const file = path ? path + "/" + name : name;
+        return el("li", {}, el("button", { type: "button", "data-file": file, onclick: () => go("file-" + file) }, name));
+      }));
+      const card = el("div", { class: "fs-files-card", role: "group", "aria-label": `${title} in ${path || C.app}`,
+        onwheel: e => e.stopPropagation(), onpointerdown: e => e.stopPropagation() },
+        el("div", { class: "fs-files-title", text: title }), list);
+      return sv("foreignObject", { x: x - filesWidth / 2, y: y - height / 2, width: filesWidth, height,
+        "data-path": path, "data-kind": "files" }, card);
+    }
+    function draw(focusPath, oldY) {
+      const edges = sv("g", { "aria-hidden": "true" }), nodes = sv("g");
+      svg.replaceChildren(edges, nodes);
+      let cursor = 20, maxRight = 0, focusNode, focusY, reveal;
+      function place(node, depth) {
+        const { path, children, names } = node;
+        const expanded = children && (depth === 0 || openFolders.has(path));
+        const toggle = children && depth > 0;
+        const x = filesWidth / 2 + 20 + depth * column;
+        const kids = expanded ? [...children.values()].sort((a, b) => a.path.localeCompare(b.path)) : [];
+        if (expanded && node.files.size) {
+          kids.push({ path, names: [...node.files].sort((a, b) => a.localeCompare(b)) });
+        }
+        const positions = kids.map(kid => place(kid, depth + 1));
+        const width = children ? folderWidth : filesWidth;
+        const height = children ? folderHeight : 34 + Math.min(7, names.length) * 26;
+        const y = positions.length ? (positions[0].y + positions.at(-1).y) / 2 : cursor + height / 2;
+        if (!positions.length) cursor += height + gap;
+        const left = x - width / 2, right = x + width / 2;
+        maxRight = Math.max(maxRight, right);
+        for (const child of positions) {
+          const mid = (right + child.left) / 2;
+          edges.append(sv("path", { class: "edge", d: `M${right},${y} C${mid},${y} ${mid},${child.y} ${child.left},${child.y}` }));
+        }
+        if (!children) return { y, left, right, height, positions, g: fileCard(node, x, y, height) };
+
+        const label = path ? path.split("/").at(-1) : C.app;
+        const count = children.size + node.files.size;
+        const sub = `${count} item${count === 1 ? "" : "s"}`;
+        const title = `Folder ${path || "."} · ${sub}`;
+        const g = sv("g", { class: "node" + (depth === 0 && focusedPath ? " focal" : ""), "data-path": path, "data-kind": "folder",
+          role: toggle ? "button" : "img", tabindex: toggle ? 0 : null, "aria-label": title,
+          "aria-expanded": toggle ? String(expanded) : null },
+          sv("title", { text: title + (toggle ? " · Ctrl+click to focus" : "") }),
+          sv("rect", { class: "box", x: left, y: y - height / 2, width, height, rx: 6 }),
+          sv("text", { class: "t-name", x, y: y - 3, "text-anchor": "middle", text: clip((toggle ? (expanded ? "▾ " : "▸ ") : "") + label, 19) }),
+          sv("text", { class: "t-sub", x, y: y + 13, "text-anchor": "middle", text: sub }));
+        if (toggle) {
+          const activate = e => {
+            if (pz.wasDrag()) return;
+            if (e.ctrlKey || e.metaKey || e.key === "f") {
+              e.preventDefault();
+              pz.focusRect({ x: left, y: y - height / 2, w: width, h: height }, 220, () => go("folder-" + path));
+            } else {
+              if (expanded) openFolders.delete(path); else openFolders.add(path);
+              draw(path, y);
+            }
+          };
+          g.addEventListener("click", activate);
+          g.addEventListener("keydown", e => {
+            if (e.key === "Enter" || e.key === " " || e.key === "f") { e.preventDefault(); activate(e); }
+          });
+        }
+        if (path === focusPath) {
+          focusNode = g;
+          focusY = y;
+          if (expanded) {
+            const first = positions[0];
+            const top = first.y - first.height / 2 - 12;
+            reveal = { left: left - 12, right: Math.max(...positions.map(child => child.right)) + 12,
+              top, bottom: top + Math.min(first.height, folderHeight) + 24 };
+          }
+        }
+        return { y, left, right, height, g, positions };
+      }
+      function append({ g, positions }) {
+        nodes.append(g);
+        positions.forEach(append);
+      }
+      append(place(root, 0));
+      const bounds = { x: 0, y: 0, w: maxRight + 20, h: cursor - gap + 20 };
+      if (pz) pz.refit(bounds, focusY - oldY, reveal);
+      else {
+        pz = panZoom(svg, bounds);
+        const { width: viewportWidth, height: viewportHeight } = svg.getBoundingClientRect();
+        // Start tall trees at a readable scale. Fit still shows the whole tree.
+        const readableScale = 0.74;
+        const w = viewportWidth / readableScale, h = viewportHeight / readableScale;
+        if (w >= bounds.w && h > 0 && h < bounds.h) pz.set({ x: (bounds.w - w) / 2, y: 0, w, h });
+      }
+      focusNode?.focus({ preventScroll: true });
+    }
+    draw();
+    const toggle = el("button", { type: "button", class: "depth" + (showTestFiles ? " on" : ""),
+      "aria-pressed": String(showTestFiles), "data-test-files": true,
+      title: showTestFiles ? "Hide test files" : "Show test files",
+      onclick: () => {
+        showTestFiles = !showTestFiles;
+        try { localStorage.setItem(testFilesKey, showTestFiles ? "show" : "hide"); } catch (e) { /* storage may be blocked */ }
+        renderFilesystem(focusedPath);
+        stage.querySelector("[data-test-files]").focus();
+      } }, "Test files");
+    stageTools(controls, pz, el("span", { class: "modes-seg" }, toggle));
+  }
+
+  function projectFilePaths(model) {
+    const owners = new Map();
+    for (const [id, pkg] of Object.entries(model.packages)) {
+      for (const file of pkg.files || []) {
+        const path = pkg.path && pkg.path !== "." ? pkg.path + "/" + file.name : file.name;
+        if (!owners.has(path)) owners.set(path, []);
+        owners.get(path).push(id);
+      }
+    }
+    return owners;
+  }
+
+  function renderRepositoryFile(path) {
+    const owners = projectFilePaths(MODEL_CODE);
+    const paths = MODEL_CODE.repositoryFiles || [...owners.keys()];
+    if (!paths.includes(path)) { go("filesystem"); return; }
+    if (folderFocus && !path.startsWith(folderFocus + "/")) folderFocus = "";
+    setMapCrumbs("filesystem", path.split("/").at(-1), folderFocus ? "folder-" + folderFocus : null);
+    const source = own(MODEL_CODE.fileSources, path);
+    const root = MODEL_CODE.repositoryRoot;
+    const original = location.protocol === "file:" && typeof root === "string"
+      ? el("a", { href: "./" + encodePath(root ? root + "/" + path : path), target: "_blank", rel: "noopener" }, "Open original file")
+      : null;
+    const links = (owners.get(path) || []).filter(id => !(MODEL_CODE.folded || []).includes(id))
+      .map(id => el("button", { class: "linkish", type: "button", onclick: () => go("pkg-" + id) }, pkgLabel(id)));
+    stage.replaceChildren(el("article", { class: "fs-reader" },
+      el("header", {}, el("h1", { text: path }), el("div", { class: "fs-reader-links" }, original, links)),
+      typeof source === "string"
+        ? repositoryFileSource(path, source)
+        : el("p", { class: "muted", text: "A text preview is unavailable for this file." })));
+    stage.scrollTop = 0;
   }
 
   /* ----- level 0: the package map ----- */
@@ -335,7 +560,8 @@
     flow: "Click a package to zoom in, Ctrl+click to isolate it. Arrows follow what moves at run time: events, messages, calls, data."
   };
   function renderMap() {
-    setCrumbs([[C.app + (SPACE === "infra" ? " · infrastructure" : " · package map")]], 0);
+    if (SPACE === "infra") setCrumbs([[C.app + " · infrastructure"]], 0);
+    else setMapCrumbs("map");
     const NW = 158, NH = 48;
     const [vx, vy, vw, vh] = MAP.viewBox;
     const svg = sv("svg", { class: "canvas fade", role: "img", "aria-label": "Package map" });
@@ -392,12 +618,12 @@
     stageTools(stage, pz, [modeSwitch(renderMap), toggleSwitch(renderMap)].filter(Boolean));
     if (zoomOutFrom && pos[zoomOutFrom]) { const [x, y] = pos[zoomOutFrom]; const r = { x: x - NW / 2, y: y - NH / 2, w: NW, h: NH }; pz.set({ x: r.x - r.w * 0.7, y: r.y - r.h * 1.4, w: r.w * 2.4, h: r.h * 3.8 }); pz.animateTo(pz.home, 340); }
     zoomOutFrom = null;
-    renderIntroPanel();
+    if (SPACE === "infra") renderIntroPanel(panel);
   }
-  function renderIntroPanel() {
-    panel.replaceChildren(...[
+  function renderIntroPanel(target) {
+    target.replaceChildren(...[
       el("div", { class: "eyebrow", text: SPACE === "infra" ? "Infrastructure" : "Onboarding" }),
-      el("h2", { text: C.tagline }),
+      el(target === panel ? "h2" : "h1", { text: C.tagline || C.app }),
       el("p", { class: "pitch", text: C.pitch }),
       el("p", { class: "pitch muted", text: C.pitch2 }),
       C.path.length ? el("h3", { text: "Understand it in five minutes" }) : null,
@@ -407,7 +633,7 @@
       el("h3", { text: "How to read this" }),
       SPACE === "infra"
         ? el("p", { class: "howto" }, "Three zoom levels: the service areas, one area's resources, one resource with its code. Ctrl+click a box to isolate it with its neighbours. ", el("b", { text: HAS_FLOW ? "References / Data flow" : "" }), HAS_FLOW ? " switches the arrows between what names what and what moves where at run time. " : "", "Use the breadcrumb or Esc to zoom back out. Press ", el("b", { text: "/" }), " to search anything.")
-        : el("p", { class: "howto" }, "Three zoom levels: the package map, one package's types, one type with its code. In a package, Ctrl+click a type (or its ⌖) to isolate it with the types it is linked to. Use the breadcrumb or Esc to zoom back out. ", el("b", { text: "Flows" }), " shows how the parts talk to each other, step by step. Tests links feature scenarios to their evidence and flows; its Code coverage view shows recorded statement measurements. Press ", el("b", { text: "/" }), " to search anything."),
+        : el("p", { class: "howto" }, "Explore has a package map for dependencies and a filesystem map for folders and files. Open a package to see its types and functions, then open a symbol to read its code. In a package, Ctrl+click a type (or its ⌖) to isolate it with the types it is linked to. Use the breadcrumb or Esc to zoom back out. ", el("b", { text: "Flows" }), " shows how the parts talk to each other, step by step. Tests links feature scenarios to their evidence and flows; its Code coverage view shows recorded statement measurements. Press ", el("b", { text: "/" }), " to search anything."),
       el("p", { class: "muted", style: "font-size:0.8rem" }, "Snapshot: " + C.snapshot)
     ].filter(Boolean));
   }
@@ -601,7 +827,7 @@
         svg.append(g);
       });
     }
-    // types with no relation, then (for type-less packages) the functions
+    // Types with no relation, then free functions.
     const grid = (items, title) => {
       if (!items.length) return;
       const top = H ? H + 40 : 20, maxW = Math.max(W, 960);
@@ -623,12 +849,12 @@
         sv("text", { class: "t-name", x: n.x - n.w / 2 + 10, y: n.y + 11, text: n.name + "()" }));
       const open = () => { if (!pz.wasDrag()) go(`fn-${pid}.${n.name}`); };
       g.addEventListener("click", open);
-      g.addEventListener("keydown", e => { if (e.key === "Enter") open(); });
+      g.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } });
       return g;
     }
     if (lay) grid(lay.loose || [], lay.nodes.length ? (flowMode ? "NOT IN THE DATA FLOW" : "NOT LINKED TO OTHER TYPES") : "TYPES");
-    if (!Object.keys(p.types).length) {
-      const fns = Object.values(p.funcs).filter(f => !f.name.startsWith("init")).sort((a, b) => b.exported - a.exported || a.name.localeCompare(b.name))
+    if (Object.keys(p.funcs).length || !Object.keys(p.types).length) {
+      const fns = Object.values(p.funcs).filter(f => !(M.language === "go" && f.name === "init")).sort((a, b) => b.exported - a.exported || a.name.localeCompare(b.name))
         .map(f => ({ key: pid + "." + f.name, name: f.name, isFn: true, w: Math.max(150, f.name.length * 8.2 + 40), h: 46 }));
       grid(fns, fns.length ? "FUNCTIONS" : "NO FUNCTIONS OR TYPES");
     }
@@ -817,9 +1043,11 @@
   }
   document.addEventListener("keydown", e => {
     if (e.key !== "Escape" || !modes.explore.classList.contains("on") || e.target.closest("input, textarea")) return;
-    const h = decodeURIComponent(location.hash.slice(1)).replace(/^infra\//, "");
+    const h = hashRoute().replace(/^infra\//, "");
     if (h.startsWith("focus-")) { const [pk, ty] = h.slice(6).split("."); zoomOutFrom = pk + "." + ty; go("pkg-" + pk); }
     else if (h.startsWith("mapfocus-")) { zoomOutFrom = h.slice(9).split(".")[0]; go("map"); }
+    else if (h.startsWith("folder-")) go("filesystem");
+    else if (h.startsWith("file-")) go(folderFocus ? "folder-" + folderFocus : "filesystem");
   });
 
   function renderPackagePanel(pid, c, p) {
@@ -839,7 +1067,7 @@
       kids.push(el("h3", { text: "Files" }), el("ul", { class: "list files" }, p.files.map(f => el("li", {}, el("code", { text: f.name }), el("span", { class: "n", text: f.lines }), el("span", { class: "muted", text: (c.files || {})[f.name] || "" })))));
       const types = Object.values(p.types).sort((a, b) => b.exported - a.exported || a.name.localeCompare(b.name));
       if (types.length) kids.push(el("h3", { text: `Types (${types.length})` }), el("ul", { class: "list" }, types.map(t => el("li", {}, el("button", { type: "button", onclick: () => go(`type-${pid}.${t.name}`) }, el("span", { class: "nm", text: t.name }), el("span", { class: "ds", text: firstLine(t.doc) || t.kind }))))));
-      const fns = Object.values(p.funcs).filter(f => !f.name.startsWith("init")).sort((a, b) => b.exported - a.exported || a.name.localeCompare(b.name));
+      const fns = Object.values(p.funcs).filter(f => !(M.language === "go" && f.name === "init")).sort((a, b) => b.exported - a.exported || a.name.localeCompare(b.name));
       if (fns.length) kids.push(el("h3", { text: `Functions (${fns.length})` }), el("ul", { class: "list" }, fns.map(f => el("li", {}, el("button", { type: "button", onclick: () => go(`fn-${pid}.${f.name}`) }, el("span", { class: "nm", text: f.name + "()" }), el("span", { class: "ds", text: firstLine(f.doc) }))))));
       if (p.vars && p.vars.length) kids.push(el("h3", { text: "Package variables" }), el("p", { class: "muted mono", style: "font-size:0.8rem" }, p.vars.join(", ")));
     }
@@ -906,34 +1134,43 @@
   }
   let TOK = L.tok;
   function codeView(src, startLine, ctx, hlFrom, hlTo) {
+    const file = ctx.fileLanguage;
+    const syntax = file ? LANG[file] : L;
+    const keywords = file ? new Set(syntax.kw.split(" ")) : KW;
+    const builtins = file ? new Set(syntax.builtin.split(" ")) : BUILTIN;
+    const tokenizer = file ? syntax.tok : TOK;
     const pre = el("pre", { class: "src" });
     let line = el("span", { class: "ln", "data-n": startLine }), n = startLine;
     const push = (text, cls, route) => {
       const parts = text.split("\n");
       parts.forEach((part, i) => {
-        if (i) { pre.append(line); n++; line = el("span", { class: "ln", "data-n": n }); }
+        if (i) {
+          pre.append(line);
+          if (file) pre.append("\n");
+          line = el("span", { class: "ln", "data-n": ++n });
+        }
         if (!part) return;
         if (!cls) line.append(part);
         else line.append(el("span", route ? { class: cls, "data-route": route, title: route.replace(/^(type|fn)-/, "") } : { class: cls }, part));
       });
     };
-    let m, prevSig = [], pending = null;
-    TOK.lastIndex = 0;
-    while ((m = TOK.exec(src))) {
+    let m, prevSig = [];
+    tokenizer.lastIndex = 0;
+    while ((m = tokenizer.exec(src))) {
       const t = m[0];
       if (prevSig.length > 8) prevSig = prevSig.slice(-4);
       if (/^\s+$/.test(t)) { push(t); continue; }
-      if (L.comment(t)) { push(t, "c"); continue; }
+      if (syntax.comment(t)) { push(t, "c"); continue; }
       if (/^[rRbBuUfF]{0,2}["'`]/.test(t) && !/^[A-Za-z_]\w*$/.test(t)) { push(t, "s"); prevSig.push(t); continue; }
       if (/^<<-?[A-Z_]+\n/.test(t)) { push(t, "s"); prevSig.push(t); continue; }   // HCL / shell heredoc
       if (/^\d/.test(t)) { push(t, "nu"); prevSig.push(t); continue; }
       if (/^[A-Za-z_$]/.test(t)) {
         const afterDot = prevSig[prevSig.length - 1] === ".";
         const qual = afterDot ? prevSig[prevSig.length - 2] : null;
-        if (KW.has(t)) push(t, "k");
-        else if (!afterDot && BUILTIN.has(t)) push(t, "k");
+        if (keywords.has(t)) push(t, "k");
+        else if (!afterDot && builtins.has(t)) push(t, "k");
         else {
-          const tg = linkTarget(t, qual && pkgByName[qual] ? qual : null, afterDot && !(qual && pkgByName[qual]), ctx);
+          const tg = file ? null : linkTarget(t, qual && pkgByName[qual] ? qual : null, afterDot && !(qual && pkgByName[qual]), ctx);
           if (tg) push(t, tg.cls, tg.route); else push(t);
         }
         prevSig.push(t); continue;
@@ -943,6 +1180,21 @@
     pre.append(line);
     if (hlFrom) pre.querySelectorAll(".ln").forEach(l => { const k = +l.dataset.n; if (k >= hlFrom && k <= hlTo) l.classList.add("hl"); });
     pre.addEventListener("click", e => { const t = e.target.closest("[data-route]"); if (t) go(t.dataset.route); });
+    return pre;
+  }
+  const FILE_LANGUAGES = {
+    go: "go", py: "python", pyi: "python",
+    js: "javascript", jsx: "javascript", mjs: "javascript", cjs: "javascript",
+    ts: "typescript", tsx: "typescript", mts: "typescript", cts: "typescript",
+    tf: "hcl", tfvars: "hcl", hcl: "hcl"
+  };
+  function repositoryFileSource(path, source) {
+    const name = path.split("/").at(-1);
+    const language = name.includes(".") && own(FILE_LANGUAGES, name.split(".").at(-1).toLowerCase());
+    const pre = language ? codeView(source, 1, { fileLanguage: language }) : el("pre", { text: source });
+    pre.classList.add("fs-reader-source");
+    pre.setAttribute("aria-label", "File content");
+    pre.tabIndex = 0;
     return pre;
   }
   const startOf = f => f.endLine - f.src.split("\n").length + 1;
@@ -1293,14 +1545,15 @@
   /* =====================================================================
      SEARCH
      ===================================================================== */
-  const INDEX = [{ kind: "page", title: "Dependencies", sub: "Direct dependency versions", route: "dependencies", hay: "dependencies versions updates outdated", w: 1 }];
+  const INDEX = [{ kind: "page", title: "Filesystem map", sub: "Project files and folders", route: "filesystem", hay: "filesystem files folders map", w: 1 }, { kind: "page", title: "Dependencies", sub: "Direct dependency versions", route: "dependencies", hay: "dependencies versions updates outdated", w: 1 }];
+  INDEX.push({ kind: "page", title: "Presentation", sub: "Project overview", route: "presentation", hay: "presentation onboarding overview", w: 1 });
   (function buildIndex() {
     INDEX.push(...(window.APPEDIA_TEST_UI?.searchEntries() || []));
     for (const [id, c] of Object.entries(C.packages)) if (!(M.folded || []).includes(id)) INDEX.push({ kind: "package", title: c.label, sub: c.role, route: "pkg-" + id, hay: (c.label + " " + id + " " + c.role).toLowerCase(), w: 4 });
     for (const [id, p] of Object.entries(P)) {
       for (const t of Object.values(p.types)) INDEX.push({ kind: "type", title: `${t.name}`, sub: `${pkgLabel(id)} · ${firstLine(t.doc) || t.kind}`, route: `type-${id}.${t.name}`, hay: (t.name + " " + id + " " + firstLine(t.doc)).toLowerCase(), name: t.name.toLowerCase(), w: 3 });
       for (const f of Object.values(p.methods)) INDEX.push({ kind: "method", title: `${f.recv}.${f.name}()`, sub: `${pkgLabel(id)} · ${firstLine(f.doc) || f.sig}`, route: `type-${id}.${f.recv}.${f.name}`, hay: (f.recv + "." + f.name + " " + firstLine(f.doc)).toLowerCase(), name: f.name.toLowerCase(), w: 2 });
-      for (const f of Object.values(p.funcs)) if (!f.name.startsWith("init")) INDEX.push({ kind: "func", title: `${f.name}()`, sub: `${pkgLabel(id)} · ${firstLine(f.doc) || f.sig}`, route: `fn-${id}.${f.name}`, hay: (f.name + " " + id + " " + firstLine(f.doc)).toLowerCase(), name: f.name.toLowerCase(), w: 2 });
+      for (const f of Object.values(p.funcs)) if (!(MODEL_CODE.language === "go" && f.name === "init")) INDEX.push({ kind: "func", title: `${f.name}()`, sub: `${pkgLabel(id)} · ${firstLine(f.doc) || f.sig}`, route: `fn-${id}.${f.name}`, hay: (f.name + " " + id + " " + firstLine(f.doc)).toLowerCase(), name: f.name.toLowerCase(), w: 2 });
     }
     for (const [id, f] of Object.entries(C.flows)) {
       INDEX.push({ kind: "flow", title: f.title, sub: f.summary, route: "flow-" + id, hay: (f.title + " " + f.summary).toLowerCase(), w: 4 });

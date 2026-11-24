@@ -3,7 +3,7 @@
 //   node appediff.mjs --repo <repo> --lang go|python|ts [--base <rev>] [--head <rev>|WORKTREE]
 //                     [--out <repo>/tmp/appediff] [--infra <terraform dir in the repo>]
 //                     [--src <dir>] [--exclude a,b] [--python "<command>"]
-//                     [--appedia <dir>] [--no-appedia] [--rebuild]
+//                     [--appedia <dir>] [--no-appedia] [--collect-coverage] [--rebuild]
 //
 // 1. Checks out base and head (git archive; WORKTREE copies the working tree, untracked files
 //    included) into <out>/.work, runs the language's extractor (and the Terraform one with
@@ -22,12 +22,16 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync, copyFileSyn
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
-import { inventory, makeIndex } from "./impact.mjs";
+import { inventory, makeIndex, readContent } from "./impact.mjs";
 
 const args = Object.fromEntries(process.argv.slice(2).reduce((acc, a, i, all) => (a.startsWith("--") ? [...acc, [a.slice(2), all[i + 1] && !all[i + 1].startsWith("--") ? all[i + 1] : true]] : acc), []));
 const skill = join(dirname(fileURLToPath(import.meta.url)), "..");
-const usage = "usage: node appediff.mjs --repo <repo> --lang go|python|ts [--base <rev>] [--head <rev>|WORKTREE] [--out <dir>] [--infra <dir>] [--src <dir>] [--exclude a,b] [--python \"<command>\"] [--appedia <dir>] [--no-appedia] [--rebuild]";
+const usage = "usage: node appediff.mjs --repo <repo> --lang go|python|ts [--base <rev>] [--head <rev>|WORKTREE] [--out <dir>] [--infra <dir>] [--src <dir>] [--exclude a,b] [--python \"<command>\"] [--appedia <dir>] [--no-appedia] [--collect-coverage] [--rebuild]";
 if (!args.repo || !["go", "python", "ts"].includes(args.lang)) { console.error(usage); process.exit(2); }
+if (args["collect-coverage"] && (args.rebuild || args.lang !== "go")) {
+  console.error("--collect-coverage requires a fresh Go run. Use --test-evidence to import paired profiles.");
+  process.exit(2);
+}
 const repo = resolve(args.repo);
 const out = resolve(args.out || join(repo, "tmp", "appediff"));
 const appediaDir = resolve(args.appedia || join(repo, "appedia"));
@@ -38,7 +42,8 @@ const work = join(out, ".work");
 // the site itself lives in the working tree: never diff it against base
 const outRel = relative(repo, out);
 const inOut = p => outRel && !outRel.startsWith("..") && (p === outRel || p.startsWith(outRel + "/"));
-const git = (...a) => execFileSync("git", ["-C", repo, ...a], { maxBuffer: 1 << 28, stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
+const gitRaw = (...a) => execFileSync("git", ["-C", repo, ...a], { maxBuffer: 1 << 28, stdio: ["ignore", "pipe", "ignore"] }).toString();
+const git = (...a) => gitRaw(...a).trim();
 const fail = msg => { console.error(msg); process.exit(1); };
 function run(cmd, argv, opts = {}) {
   const r = spawnSync(cmd, argv, { encoding: "utf8", maxBuffer: 1 << 28, ...opts });
@@ -73,7 +78,7 @@ function checkout(rev, dir) {
   rmSync(dir, { recursive: true, force: true });
   mkdirSync(dir, { recursive: true });
   if (rev === "WORKTREE") {
-    const list = git("ls-files", "-co", "--exclude-standard", "-z").split("\0").filter(Boolean);
+    const list = gitRaw("ls-files", "-co", "--exclude-standard", "-z").split("\0").filter(Boolean);
     for (const p of list) { if (inOut(p)) continue; const src = join(repo, p); if (!existsSync(src)) continue; mkdirSync(dirname(join(dir, p)), { recursive: true }); copyFileSync(src, join(dir, p)); }
   } else {
     const tar = execFileSync("git", ["-C", repo, "archive", rev], { maxBuffer: 1 << 30 });
@@ -98,7 +103,7 @@ if (!args.rebuild) {
     say(extract(dir, join(work, side + "-model.json")));
     const appediaRel = relative(repo, appediaDir).split(sep).join("/");
     const outSide = relative(repo, out).split(sep).join("/");
-    writeFileSync(join(work, side + "-files.json"), JSON.stringify(inventory(dir, { output: appediaRel, outputExtra: [outSide], exclude: seedExclude })));
+    writeFileSync(join(work, side + "-files.json"), JSON.stringify(inventory(dir, { output: appediaRel, outputExtra: [outSide], exclude: seedExclude, snapshot: true })));
     if (typeof args.infra === "string") {
       const tf = join(dir, args.infra);
       const has = existsSync(tf) && readdirSync(tf).some(f => f.endsWith(".tf"));
@@ -106,15 +111,39 @@ if (!args.rebuild) {
       else { writeFileSync(join(work, side + "-infra.json"), JSON.stringify(EMPTY_INFRA)); console.log(`${side}: no .tf files in ${args.infra}, empty infrastructure`); }
     }
     if (side === "head") say(run("python3", [join(skill, "scripts", "dependencies.py"), "--root", dir, "--lang", args.lang, "--files", join(work, "files.json"), "--out", join(work, "dependencies.json"), "--exclude", typeof args.exclude === "string" ? args.exclude : ""]));
-    say(run("python3", [join(skill, "scripts", "test-evidence.py"), "--root", dir, "--revision", rev === "WORKTREE" ? "WORKTREE" : git("rev-parse", rev), "--out", join(work, side + "-test-evidence.json"), "--exclude", typeof args.exclude === "string" ? args.exclude : ""]));
+    const evidencePath = join(work, side + "-test-evidence.json");
+    const evidenceArgs = [join(skill, "scripts", "test-evidence.py"), "--root", dir,
+      "--revision", rev === "WORKTREE" ? "WORKTREE" : git("rev-parse", rev),
+      "--out", evidencePath, "--exclude", typeof args.exclude === "string" ? args.exclude : ""];
+    say(run("python3", evidenceArgs));
+    const evidence = JSON.parse(readFileSync(evidencePath, "utf8"));
+    if (args["collect-coverage"]) {
+      const coveragePath = join(work, side + "-coverage-evidence.json");
+      rmSync(coveragePath, { force: true });
+      console.log(`Collecting ${side} statement coverage`);
+      const [script, ...options] = evidenceArgs;
+      const collection = spawnSync("python3", [script, ...options, "--out", coveragePath, "--run-go-coverage"], { encoding: "utf8", maxBuffer: 1 << 28 });
+      if (existsSync(coveragePath)) {
+        const measured = JSON.parse(readFileSync(coveragePath, "utf8"));
+        if (measured.head.fingerprint === evidence.head.fingerprint) {
+          evidence.coverage = measured.coverage;
+          writeFileSync(evidencePath, JSON.stringify(evidence));
+        } else console.error(`Coverage source for ${side} changed after extraction. Reprepare this endpoint.`);
+      }
+      if (collection.status !== 0) {
+        console.error(`Coverage failed for ${side}. See ${coveragePath.replace(/\.json$/, ".go-test.jsonl")}`);
+        if (collection.error || collection.stderr) console.error(collection.error || collection.stderr.trim());
+      }
+    }
     const extracted = JSON.parse(readFileSync(join(work, side + "-model.json"), "utf8"));
-    extracted.testFingerprints = { head: JSON.parse(readFileSync(join(work, side + "-test-evidence.json"), "utf8")).head.fingerprint };
+    extracted.testFingerprints = { head: evidence.head.fingerprint };
     writeFileSync(join(work, side + "-model.json"), JSON.stringify(extracted));
     rmSync(dir, { recursive: true, force: true });
   }
   const testBase = JSON.parse(readFileSync(join(work, "base-test-evidence.json"), "utf8"));
   const testHead = JSON.parse(readFileSync(join(work, "head-test-evidence.json"), "utf8"));
-  writeFileSync(join(work, "test-evidence.json"), JSON.stringify({ version: 1, collectedAt: testHead.collectedAt, base: testBase.head, head: testHead.head, coverage: {} }));
+  const coverage = { base: testBase.coverage?.head, head: testHead.coverage?.head };
+  writeFileSync(join(work, "test-evidence.json"), JSON.stringify({ version: 1, collectedAt: testHead.collectedAt, base: testBase.head, head: testHead.head, coverage }));
   say(run("node", [join(skill, "scripts", "merge.mjs"), "--base", join(work, "base-model.json"), "--head", join(work, "head-model.json"), "--out", join(work, "model.json")]));
   if (typeof args.infra === "string") say(run("node", [join(skill, "scripts", "merge.mjs"), "--base", join(work, "base-infra.json"), "--head", join(work, "head-infra.json"), "--out", join(work, "infra.json")]));
   else rmSync(join(work, "infra.json"), { force: true });
@@ -161,6 +190,18 @@ function appediaProvenance(dir, work, files) {
   } catch (e) { return `unknown provenance: ${e.message}`; }
 }
 
+function changedSymbols(model) {
+  const refs = new Set();
+  for (const [pid, pkg] of Object.entries(model.packages || {})) {
+    for (const section of ["types", "funcs", "methods"]) {
+      for (const [name, item] of Object.entries(pkg[section] || {})) {
+        if (["added", "removed", "changed", "moved"].includes(item.ch)) refs.add(`${pid}.${name}`);
+      }
+    }
+  }
+  return refs;
+}
+
 function seedFromAppedia(path, model, infra, files, template, provenance) {
   const ctx = { window: {} };
   vm.runInNewContext(readFileSync(path, "utf8"), ctx);
@@ -169,15 +210,14 @@ function seedFromAppedia(path, model, infra, files, template, provenance) {
   vm.runInNewContext(template, tctx);
   const review = tctx.window.APPEDIA_CONTENT.review;
   const index = makeIndex(a, model, infra);
-  const changes = new Set();
-  for (const [pid, p] of Object.entries(model.packages || {})) for (const section of ["types", "funcs", "methods"]) for (const [name, item] of Object.entries(p[section] || {})) if (["added", "removed", "changed"].includes(item.ch)) changes.add(`${pid}.${name}`);
+  const changes = [...changedSymbols(model)];
   const changedFiles = new Set(files.files.flatMap(f => [f.path, f.old].filter(Boolean)));
   const touched = id => {
     const item = index.items.find(x => x.kind === "flow" && x.id === id);
-    return !!item && (item.refs.some(ref => [...changes].some(ch => ch === ref || ch.startsWith(ref + "."))) || item.files.some(file => changedFiles.has(file)));
+    return !!item && (item.refs.some(ref => changes.some(ch => ch === ref || ch.startsWith(ref + "."))) || item.files.some(file => changedFiles.has(file)));
   };
   const flows = Object.fromEntries(Object.entries(a.flows || {}).filter(([id]) => touched(id)));
-  const tests = seedTesting(a.tests, flows, [...changedFiles], [...changes]);
+  const tests = seedTesting(a.tests, flows, [...changedFiles], changes);
   for (const f of tests?.features || []) for (const scenario of f.scenarios || []) for (const id of scenario.flows || []) if (a.flows?.[id]) flows[id] = a.flows[id];
   const packages = JSON.parse(JSON.stringify(a.packages || {}));
   for (const p of Object.values(packages)) p.rules = [];
@@ -194,9 +234,66 @@ window.APPEDIA_CONTENT = ${JSON.stringify(c, null, 2)};
 `;
 }
 
+function writeReviewBrief() {
+  const load = name => JSON.parse(readFileSync(join(work, name + ".json"), "utf8"));
+  const { base, head, subject, files } = load("files");
+  const model = load("model");
+  const content = readContent(contentPath);
+  const evidence = args["test-evidence"] ? JSON.parse(readFileSync(args["test-evidence"], "utf8"))
+    : existsSync(join(work, "test-evidence.json")) ? load("test-evidence") : {};
+  const coverageStatus = side => evidence.coverage?.[side]?.result || "not collected";
+  const lines = ["# Review brief", "", `${base} → ${head} · ${subject}`,
+    `Coverage runs · base ${coverageStatus("base")}, head ${coverageStatus("head")}`];
+  const append = (title, rows, detail, limit = 12) => {
+    lines.push("", `## ${title} (${rows.length})`);
+    for (const row of rows.slice(0, limit)) lines.push("- " + row);
+    if (rows.length > limit) lines.push(`- ${rows.length - limit} more in ${detail}`);
+  };
+  const roleGaps = Object.keys(model.packages).filter(id => !content.packages?.[id]?.role);
+  const refs = changedSymbols(model);
+  const candidates = Object.entries(content.flows || {}).map(([id, flow]) => ({
+    label: `${id} · ${flow.title}`,
+    changedSteps: (flow.steps || []).filter(step => step[6] || refs.has(step[5])).length
+  })).sort((a, b) => b.changedSteps - a.changedSteps).map(flow => flow.label);
+  const scenarios = (content.tests?.features || []).flatMap(feature => (feature.scenarios || [])
+    .filter(scenario => feature.needsReview || scenario.status === "unassessed")
+    .map(scenario => {
+      const sources = (scenario.evidence || []).map(id => content.tests.evidence?.find(item => item.id === id)?.file || id);
+      return `${feature.id}/${scenario.id}${sources.length ? " · " + [...new Set(sources)].join(", ") : ""}`;
+    }));
+  const testFiles = files.filter(file => evidence.head?.files?.[file.path] || evidence.base?.files?.[file.old || file.path]);
+  const sourceFiles = [...files].sort((a, b) => Number(inAppedia(a.path)) - Number(inAppedia(b.path)));
+  const fileRow = file => `${file.status} ${JSON.stringify(file.path)}${file.old ? " ← " + JSON.stringify(file.old) : ""} (+${file.adds} −${file.dels})`;
+  append("Changed files", sourceFiles.map(fileRow), "files.json", 20);
+  append("Changed test sources", testFiles.map(fileRow), "test-evidence.json");
+  append("Flow candidates", candidates, "data/content.js");
+  append("Test scenarios to review", scenarios, "data/content.js");
+  append("Package roles to fill", roleGaps, "the model and data/content.js");
+  const review = content.review || {};
+  const placeholders = ["title", "summary", "door", "blast"].filter(key => !review[key] || /\bTODO\b/.test(review[key]));
+  if (placeholders.length) lines.push("", `Complete the review fields ${placeholders.join(", ")}.`);
+  if (content.seedProvenance) lines.push("", `Seed: ${content.seedProvenance}.`);
+  lines.push("", "Verify candidates against the relevant Git diff and assertions. Cached models, file hunks, and source evidence are available in this directory.");
+  const brief = join(work, "review-brief.md");
+  writeFileSync(brief, lines.join("\n") + "\n");
+  console.log(`review brief: ${brief}`);
+}
+
+const appediaRel = relative(repo, appediaDir).split(sep).join("/");
+const inAppedia = path => !!appediaRel && !appediaRel.startsWith("../") && path.startsWith(appediaRel + "/");
+writeReviewBrief();
+
 /* ---------- 4. build ---------- */
 const r = spawnSync("node", [join(skill, "scripts", "build.mjs"), "--model", join(work, "model.json"), ...(hasInfra ? ["--infra-model", join(work, "infra.json")] : []), "--files", join(work, "files.json"), ...(existsSync(join(work, "dependencies.json")) ? ["--dependencies", join(work, "dependencies.json")] : []), ...(args["test-evidence"] ? ["--test-evidence", args["test-evidence"]] : existsSync(join(work, "test-evidence.json")) ? ["--test-evidence", join(work, "test-evidence.json")] : []), "--content", contentPath, "--out", out], { encoding: "utf8" });
+if (r.error) fail(r.error.message);
+const log = join(work, "build.log");
+writeFileSync(log, (r.stdout || "") + (r.stderr || ""));
 process.stdout.write(r.stdout || "");
-process.stderr.write(r.stderr || "");
+const diagnostics = (r.stderr || "").trim().split("\n").filter(Boolean);
+const warnings = diagnostics.filter(line => line.startsWith("warning:"));
+const errors = diagnostics.filter(line => !line.startsWith("warning:"));
+if (warnings.length) console.error(`${warnings.length} build warning(s) · ${log}`);
+if (errors.length) console.error(errors.slice(0, 16).join("\n"));
+if (errors.length > 16) console.error(`${errors.length - 16} more diagnostic(s) · ${log}`);
 if (r.status !== 0) { console.error(`\nThe build stopped on the problems above: fix ${contentPath} and run again with --rebuild.`); process.exit(r.status); }
 console.log(`\nopen ${join(out, "index.html")}`);

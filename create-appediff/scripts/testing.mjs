@@ -106,6 +106,14 @@ export function prepareTesting(authored, snapshot, { flows = {}, packages = {}, 
     for (const file of f.sources?.files || []) if (!pathOK(file)) errors.push(`feature ${f.id}: invalid source file`);
     return { ...f, scenarios: packed, flows: [...new Set(packed.flatMap(s => s.flows))] };
   });
+  const revisionKey = value => value === 'working tree' ? 'WORKTREE' : value;
+  function sameRevision(a, b) {
+    if (!a || !b) return false;
+    if (revisionKey(a) === revisionKey(b)) return true;
+    // File diffs display abbreviated Git IDs. Collectors record the full ID.
+    const gitId = /^[a-f0-9]{7,64}$/i;
+    return gitId.test(a) && gitId.test(b) && (a.startsWith(b) || b.startsWith(a));
+  }
   const coverage = {};
   for (const side of ['base', 'head']) {
     const c = snapshot?.coverage?.[side]; if (!c) continue;
@@ -116,9 +124,8 @@ export function prepareTesting(authored, snapshot, { flows = {}, packages = {}, 
       if (row) seen.add(row.path);
     }
     const expected = side === 'base' ? baseRevision : headRevision;
-    const revisionKey = value => value === 'working tree' ? 'WORKTREE' : value;
-    const endpointMatches = !!snapshot?.[side]?.revision && revisionKey(c.revision) === revisionKey(snapshot[side].revision);
-    const revMatches = !expected || c.revision === expected || (side === 'head' && expected === 'working tree' && c.revision === 'WORKTREE');
+    const endpointMatches = sameRevision(c.revision, snapshot?.[side]?.revision);
+    const revMatches = !expected || sameRevision(c.revision, expected);
     const modelMatches = !!fingerprints[side] && fingerprints[side] === snapshot?.[side]?.fingerprint;
     const eligible = !!(modelMatches && endpointMatches && snapshot?.[side]?.fingerprint && c.fingerprint === snapshot[side].fingerprint && revMatches);
     coverage[side] = { ...c, eligible, reason: eligible ? '' : 'Profile provenance is not bound to this model endpoint. Recollect through prepare/appediff, or supply matching extraction provenance; no percentage or delta is inferred.' };

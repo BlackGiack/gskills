@@ -15,6 +15,7 @@ window.APPEDIA_CONTENT = {
     title: "TODO: what the change does, as a sentence",
     ticket: "",
     lede: "TODO: the problem and the fix in two sentences",
+    // Use a short "## What changed" heading per topic and put the linked explanation below.
     summary: "TODO",
     evidence: "TODO",
     door: "TODO: two-way or one-way",

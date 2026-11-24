@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Require a coverage delta for completed reviews and collect both Go profiles with `--collect-coverage`.
+- Added a full-width changed-path map with folder rollups and direct file diff links.
+- Added expandable Review topics and on-demand file diff rendering.
+- Condensed the skill entrypoint and added a cached-review brief.
+
 ## 0.3.1 — 2026-11-09
 
 * Evidence collection now retains hashes for non-UTF-8 files, warns and omits

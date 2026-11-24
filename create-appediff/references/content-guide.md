@@ -119,7 +119,12 @@ the best evidence for a visual change. Never claim a result you didn't see.
 changes a public API or anything else that a revert doesn't undo. The blast
 radius names who is affected: consumers, environments, data, performance.
 
-**Markdown.** Paragraphs, `- ` lists, `### ` headings, ```` ``` ```` fences
+**Expandable topics.** Start each topic in `summary` or `evidence` with a short
+`## ` headline readers can understand while it is closed. Put the linked
+explanation below it. Text before the first topic stays visible. Without
+topic headings, the whole Summary or Evidence section folds together.
+
+**Markdown.** Paragraphs, `- ` lists, `### ` headings within topics, ```` ``` ```` fences
 (```` ```diff ```` colours `+` and `-` lines), `**bold**`, `` `code` ``,
 `[label](route)` and these links:
 

@@ -61,7 +61,7 @@ layer reads the marks.
 * pages: `renderReview` (with a small markdown: `md`, `inline`, `refLink`) and
   `renderFiles`.
 
-Routes added: `review`, `files`, `file-<path>`. URL parameter added:
+Routes include `review`, `filesystem`, `files`, and `file-<path>`. File hashes encode the path once. URL parameter added:
 `?flowview=diff|before|after`.
 
 ## Constraints: what must stay true

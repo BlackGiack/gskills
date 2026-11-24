@@ -10,7 +10,7 @@
 // build refuses a review that names something that does not exist.
 // Needs git, Node 18+, Graphviz, Go (orders-go) and Python 3.9+ (uv is used when present).
 import { spawnSync } from "node:child_process";
-import { readFileSync, writeFileSync, mkdtempSync, mkdirSync, copyFileSync, cpSync, rmSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdtempSync, mkdirSync, copyFileSync, cpSync, rmSync, renameSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -81,10 +81,10 @@ function compare(dir, want, filesExact) {
   if (filesExact ? JSON.stringify(paths) !== JSON.stringify(want.files) : want.files.some(p => !paths.includes(p))) diffs.push(`files: expected ${filesExact ? "" : "at least "}${want.files.join(", ")}\n  got ${paths.join(", ")}`);
   if (diffs.length) fail("change marks match tests/expected.json", diffs.join("\n")); else if (failures === before) ok("change marks match tests/expected.json");
 }
-function smoke(dir) {
+function smoke(dir, requireCoverage = false) {
   const dependencyView = run("node", [join(skill, "tests", "dependency-view.mjs"), dir, args.jsdom]);
   if (dependencyView.status !== 0) fail("dependency view", dependencyView.stderr || dependencyView.stdout); else ok(dependencyView.stdout.trim());
-  const s = run("node", [join(skill, "scripts", "smoke.mjs"), "--site", dir, "--jsdom", args.jsdom]);
+  const s = run("node", [join(skill, "scripts", "smoke.mjs"), "--site", dir, "--jsdom", args.jsdom, ...(requireCoverage ? ["--require-coverage"] : [])]);
   const out = (s.stdout || "").trim();
   if (s.status !== 0) fail("smoke", out || s.stderr); else ok("smoke: " + out.split("\n").join(" · "));
 }
@@ -94,11 +94,12 @@ for (const [name, c] of Object.entries(CASES)) {
   // committed change
   const repo = makeRepo(name, true);
   useContent(repo, join(skill, "tests", "content", name + ".js"));
-  const r = appediff(repo, c);
+  const requireCoverage = c.lang === "go";
+  const r = appediff(repo, c, requireCoverage ? ["--collect-coverage"] : []);
   if (r.status !== 0) { fail("appediff.mjs", r.stderr + r.stdout); continue; }
   ok("appediff.mjs: " + lastLine((r.stdout || "").split("\nopen ")[0]));
   compare(site(repo), expected[name], true);
-  smoke(site(repo));
+  smoke(site(repo), requireCoverage);
   // the same change, uncommitted (--head WORKTREE): deleted and untracked files instead of renames
   const wt = makeRepo(name, false);
   useContent(wt, join(skill, "tests", "content", name + ".js"));
@@ -110,6 +111,36 @@ for (const [name, c] of Object.entries(CASES)) {
     const D = loadModel(site(wt), "diff.js", "APPEDIA_DIFF");
     if (D.files.some(f => f.path.startsWith("tmp/"))) fail("the site's own files stay out of the diff", D.files.map(f => f.path).join(", "));
   }
+}
+
+console.log("\nfilesystem paths");
+{
+  const repo = makeRepo("orders-go", true);
+  const previous = "from here/a % file.txt";
+  const next = "to there/é%20.txt";
+  const odd = " a b + # \tnew.txt";
+  mkdirSync(join(repo, "from here"));
+  writeFileSync(join(repo, previous), "Keep the same text across a rename.\n");
+  git(repo, "add", "-A"); git(repo, "commit", "-qm", "add rename fixture");
+  mkdirSync(join(repo, "to there"));
+  renameSync(join(repo, previous), join(repo, next));
+  writeFileSync(join(repo, odd), "unusual path\n");
+  git(repo, "add", "-A"); git(repo, "commit", "-qm", "rename and add");
+  useContent(repo, join(skill, "tests", "content", "orders-go.js"));
+  const change = appediff(repo, CASES["orders-go"], ["--base", "HEAD^"]);
+  if (change.status !== 0) fail("build unusual paths and a cross-folder rename", change.stderr || change.stdout);
+  else {
+    const diff = loadModel(site(repo), "diff.js", "APPEDIA_DIFF");
+    if (!diff.files.some(f => f.path === odd && f.status === "A" && f.adds === 1)
+        || !diff.files.some(f => f.path === next && f.old === previous && f.status === "R")) {
+      fail("parse unusual paths and cross-folder renames", JSON.stringify(diff.files));
+    } else ok("parse unusual paths and cross-folder renames");
+    smoke(site(repo));
+  }
+  const empty = appediff(repo, CASES["orders-go"], ["--base", "HEAD"]);
+  if (empty.status !== 0 || loadModel(site(repo), "diff.js", "APPEDIA_DIFF").files.length) {
+    fail("build an empty change", empty.stderr || empty.stdout);
+  } else smoke(site(repo));
 }
 
 console.log("\nseeding from an appedia");
@@ -129,6 +160,7 @@ console.log("\nseeding from an appedia");
     if (C.packages.orders.role !== "Orders and the service that places them." || C.packages.orders.rules.length) problems.push("package entries must be kept, without rule links");
     if (!C.map || !C.map.modes) problems.push("the map must be kept");
     if (!/TODO/.test(C.review.summary)) problems.push("the review must start from the template");
+    if (!readFileSync(join(site(repo), ".work", "review-brief.md"), "utf8").includes("Package roles to fill")) problems.push("the review brief must be usable before the draft builds");
     if (problems.length) fail("seeded content", problems.join("\n")); else ok("seeded: packages, map and the touched flow kept; rules, tasks, tour and untouched flow left out");
     if (r.status === 1 && /review\.summary still says TODO/.test(r.stderr) && /package events needs label, sub and role/.test(r.stderr)) ok("the build refuses the seeded review until it is written, and asks for the new packages' roles");
     else fail("the build refuses a TODO review", `exit ${r.status}\n${r.stderr}`);

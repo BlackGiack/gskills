@@ -9,7 +9,11 @@ window.APPEDIA_CONTENT = {
     title: "Orders can be cancelled, and placing one publishes an event",
     ticket: "ORD-42",
     lede: "Adds `POST /orders/<id>/cancel` and an in-process event bus. The order lookup route goes away.",
-    summary: `[[orders.OrderService.cancel]] marks an order cancelled and publishes \`cancelled\`; [[orders.OrderService.place]] now also refuses zero quantities and publishes \`placed\`:
+    summary: `The API and its service change together.
+
+## Validate and publish order changes
+
+[[orders.OrderService.cancel]] marks an order cancelled and publishes \`cancelled\`; [[orders.OrderService.place]] now also refuses zero quantities and publishes \`placed\`:
 
 \`\`\`diff
  place(order)
@@ -20,6 +24,8 @@ window.APPEDIA_CONTENT = {
 \`\`\`
 
 [[events.EventBus]] is new: subscribers are called in order, in the same thread.
+
+## Replace the lookup route
 
 [[api.get_order]] is dropped: nothing called it. [[api.cancel_order|cancel_order]] replaces it in the routes. See [[flow:cancel]] and [[flow:place.4]].
 

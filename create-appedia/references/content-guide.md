@@ -57,7 +57,7 @@ rulesSource: "CONTRIBUTING.md", // where the rules come from (eyebrow on the Rul
 tasksSource: "docs/architecture.md",
 ```
 
-## 2. Concepts and the five-minute path
+## 2. Presentation, concepts and the five-minute path
 
 * `concepts`: 5-8 `[name, one-line meaning, "pkg.Type"]`: the domain nouns a
   newcomer must know (in the orders example: order, service, repository). The

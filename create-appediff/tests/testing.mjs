@@ -51,6 +51,15 @@ const coverage = (fingerprint, revision, covered = 1) => ({ command: 'go test -c
 assert.equal(prepareTesting(authored, { ...snapshot, coverage: { head: coverage(head.fingerprint, 'head') } }, { flows: { place: {} } }).data.coverage.head.eligible, false, 'an unbound legacy model cannot adopt an arbitrary profile');
 const measured = structuredClone(snapshot); measured.coverage = { head: coverage(head.fingerprint, 'head'), base: coverage(base.fingerprint, 'base', 0) };
 result = prepare(authored, measured); assert.equal(result.data.coverage.comparable, true); assert.equal(result.data.coverage.base.packages[0].covered, 0);
+const withGitRevisions = structuredClone(measured);
+const headCommit = '23456789abcdef0123456789abcdef0123456789';
+const baseCommit = '123456789abcdef0123456789abcdef012345678';
+withGitRevisions.head.revision = withGitRevisions.coverage.head.revision = headCommit;
+withGitRevisions.base.revision = withGitRevisions.coverage.base.revision = baseCommit;
+const gitDiff = { flows: { place: {} }, fingerprints: { head: head.fingerprint, base: base.fingerprint },
+  isDiff: true, baseRevision: baseCommit.slice(0, 7), headRevision: headCommit.slice(0, 7) };
+assert.equal(prepareTesting(authored, withGitRevisions, gitDiff).data.coverage.comparable, true);
+assert.equal(prepareTesting(authored, withGitRevisions, { ...gitDiff, headRevision: 'eeeeeee' }).data.coverage.comparable, false);
 measured.coverage.head.fingerprint = 'other-code'; result = prepare(authored, measured); assert.equal(result.data.coverage.head.eligible, false); assert.equal(result.data.coverage.comparable, false);
 measured.coverage.head.fingerprint = head.fingerprint; measured.coverage.head.scope = './orders'; assert.equal(prepare(authored, measured).data.coverage.comparable, false);
 measured.coverage.head.scope = './...'; measured.coverage.head.revision = 'other-revision'; assert.equal(prepare(authored, measured).data.coverage.head.eligible, false); measured.coverage.head.revision = 'head'; measured.coverage.head.result = 'failed'; assert.equal(prepare(authored, measured).data.coverage.comparable, false);

@@ -1,8 +1,8 @@
 # Tests: functional assessments and technical measurements
 
 Read this when authoring or refreshing the Tests tab. The same schema and UI ship
-with both skills. Everything here is optional for older sites; new assessments
-must identify their actual review scope. The Tests tab has two subtabs:
+with both skills. Existing sites can still be opened. Completed updates and
+reviews include current code coverage. New assessments identify their actual scope. The Tests tab has two subtabs:
 
 - **Features**: search names, descriptions and scenarios; inspect behavior,
   layout and interaction evidence, limitations and suggested next tests.
@@ -202,9 +202,16 @@ sources, test files, captures and linked flows; dispositions remain explicit.
 
 ## Code coverage
 
-Go statement profiles are supported first. Other stacks may retain feature/test
-assessments while their package coverage remains uncollected; do not guess a
-percentage or force tool installation. Existing Go profiles can be imported:
+For Appedia, deliver a passing head measurement bound to the source snapshot.
+An explicitly intermediate update may defer the run. For Appediff, deliver passing
+base and head measurements collected with the same runner, scope, instrumentation,
+and environment. The tab shows the signed change in percentage points. Use the
+delivery check `--require-coverage`. Report a failed or blocked run and any
+unavailable variation. Missing data stays missing.
+
+Go Appediffs use `appediff.mjs --collect-coverage` on a fresh run for both
+isolated endpoints. Rebuilds reuse those measurements. Existing Go profiles
+from the exact endpoints can also be imported:
 
 ```bash
 python3 <skill>/scripts/test-evidence.py --root <repo> --out /tmp/tests.json \
@@ -214,11 +221,11 @@ python3 <skill>/scripts/test-evidence.py --root <repo> --out /tmp/tests.json \
 Metadata includes `command`, `collectedAt`, `scope`, `result` (`passed`/`failed`),
 `revision`, `fingerprint`, `toolchain` and collection `environment`. These must
 come from the actual run, not retroactively inferred from today's checkout.
-Alternatively, **explicitly** execute a separate coverage collection:
+For a new Go Appedia measurement, run coverage from the prepared checkout with the same `--exclude` value:
 
 ```bash
 python3 <skill>/scripts/test-evidence.py --root <repo> --out /tmp/tests.json \
-  --revision WORKTREE --run-go-coverage
+  --revision WORKTREE --exclude <same-exclusions-as-prepare> --run-go-coverage
 # Optional project E2E scope: --go-tags e2e --go-package ./tests/e2e/...
 ```
 
@@ -231,14 +238,24 @@ package log and raw profile alongside the snapshot, records source fingerprints
 before/after, and rejects changes during execution. It does not instrument all
 packages transitively with `-coverpkg`. Failed runs stay failed and cannot
 produce a coverage delta. Build, prepare, rebuild and renderer refresh never
-execute this command implicitly.
+execute this command implicitly. When updating an existing Appedia, merge its
+curated evidence files into the new snapshot, letting newly collected records
+win. Keep the new head fingerprint and coverage-run metadata as recorded.
+
+For other stacks, run the project's established coverage command at each
+required endpoint. Collect endpoint metadata with `test-evidence.py` using the
+same exclusions as extraction. Map the runner's actual covered and total
+statement counts by package into the coverage records below. Retain the actual
+runner, mode, scope, environment, command, and date. If the project produces a
+different metric or lacks a runnable coverage command, report that blocker
+and leave the statement measurement unavailable.
 
 A snapshot has `version: 1`, `collectedAt`, `head` and optionally `base` (each with
 `revision`, `fingerprint`, `files`), plus `coverage: { head?, base? }`. Pair recorded
 coverage from both isolated endpoint runs into that object. A profile's fingerprint
 and revision must match its endpoint and the fingerprint bound to the extracted
 model by `prepare` or `appediff`. An old or manually extracted unbound model does
-not establish profile provenance. For a new site that needs coverage, run
+not establish profile provenance. For a new Appedia, run
 `appedia.mjs --action prepare --repo <repo> --out <site> --lang <lang> --exclude <exclusions>`,
 then rebuild with the recorded evidence; this re-extracts and binds the model
 without executing tests. Never stamp today's fingerprint onto an older model. A delta additionally requires successful

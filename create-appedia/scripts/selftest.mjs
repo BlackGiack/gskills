@@ -94,7 +94,7 @@ for (const [lang, extract] of Object.entries(LANGS)) {
   mkdirSync(join(site, "data"), { recursive: true });
   copyFileSync(join(skill, "tests", "content", lang + ".js"), join(site, "data", "content.js"));
   const models = lang === "terraform" ? ["--model", join(work, "go.json"), "--infra-model", join(work, "terraform.json")] : ["--model", join(work, lang + ".json")];
-  const b = run("node", [join(skill, "scripts", "build.mjs"), ...models, "--content", join(site, "data", "content.js"), "--out", site]);
+  const b = run("node", [join(skill, "scripts", "build.mjs"), ...models, "--repo", join(fx, lang === "terraform" ? "go" : lang), "--content", join(site, "data", "content.js"), "--out", site]);
   if (b.status !== 0) { fail("build", (b.stderr || b.stdout).trim()); continue; }
   ok("build: " + b.stdout.trim().split("\n").pop());
   const dependencyView = run("node", [join(skill, "tests", "dependency-view.mjs"), site, args.jsdom]);
@@ -114,9 +114,28 @@ console.log("\nupdate pipeline");
 {
   const site = join(work, "refresh-site");
   const source = join(work, "refresh-source"); cpSync(join(fx, "go"), source, { recursive: true });
+  writeFileSync(join(source, "notes # 100%.md"), "Project notes in the file reader.\n");
+  writeFileSync(join(source, "binary.bin"), Buffer.from([0, 255]));
+  writeFileSync(join(source, "filesystem_test.go"), "package main\n");
   const r = run("node", [join(skill, "scripts", "appedia.mjs"), "--action", "prepare", "--repo", source, "--out", site, "--lang", "go", "--exclude", ""]);
   if (r.status !== 0) fail("initial appedia prepare", r.stderr || r.stdout);
   else {
+    const modelPath = join(site, "data", "model.js");
+    const readModel = () => JSON.parse(readFileSync(modelPath, "utf8").replace(/^window\.APPEDIA_MODEL = /, "").replace(/;\s*$/, ""));
+    const reviewArgs = ["--repo", source, "--out", site];
+    const rebuild = run("node", [join(skill, "scripts", "appedia.mjs"), "--action", "rebuild", ...reviewArgs]);
+    if (rebuild.status !== 0 || !readModel().repositoryFiles?.includes("go.mod")) {
+      fail("prepared inventory includes non-source files", rebuild.stderr || rebuild.stdout);
+    } else {
+      const model = readModel();
+      if (model.fileSources?.["notes # 100%.md"] !== "Project notes in the file reader.\n"
+          || Object.hasOwn(model.fileSources || {}, "binary.bin") || !model.repositoryFiles.includes("binary.bin")) {
+        fail("text files open from the snapshot and binary files link to originals");
+      } else ok("prepared inventory includes text previews and binary file paths");
+      const mapSmoke = run("node", [join(skill, "scripts", "smoke.mjs"), "--site", site, "--jsdom", args.jsdom]);
+      if (mapSmoke.status !== 0) fail("filesystem test file toggle", mapSmoke.stdout || mapSmoke.stderr);
+      else ok("filesystem test file toggle hides and restores a prepared test file");
+    }
     const report = JSON.parse(readFileSync(join(site, ".maintenance", "pending", "impact.json"), "utf8"));
     const candidate = JSON.parse(readFileSync(join(site, ".maintenance", "pending", "candidate.json"), "utf8"));
     if (report.items.length || candidate.settings.language !== "go" || candidate.settings.exclude !== "") fail("initial appedia prepare state", JSON.stringify({ items: report.items.length, settings: candidate.settings }));

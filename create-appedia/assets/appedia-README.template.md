@@ -1,8 +1,7 @@
 # <App> appedia
 
-An interactive map of this codebase: packages, class diagrams, the real code,
-sequence-diagram flows, the rules the code relies on, and where to start for
-common changes. The Dependencies tab records direct versions and latest releases
+Presentation introduces the project. Explore has package and filesystem maps
+that lead to class diagrams and code, alongside flows, rules, and common tasks. The Dependencies tab records direct versions and latest releases
 reported by package managers; `?` means unknown. These are build-time snapshots.
 
 **Open `index.html` in a browser.** No server needed. Without network access
@@ -10,7 +9,7 @@ the page still works; it falls back to system fonts.
 
 ## What to edit
 
-Normally edit only `data/content.js`: package roles, flows, rules, tasks and
+Normally edit only `appedia/data/content.js`: package roles, flows, rules, tasks and
 glossary. During a reviewed refresh, also resolve the generated impact entries
 under `.maintenance/pending/impact.json`; all other site files are generated.
 
@@ -19,14 +18,12 @@ under `.maintenance/pending/impact.json`; all other site files are generated.
 From the repository root (`<skill>` is where the create-appedia skill lives):
 
 ```bash
-<the exact extract command you used, with its flags and interpreter, e.g.:>
-(cd <skill>/scripts/extract-go && go run . -root <path to this repo> -out /tmp/<app>-model.json)
-# Python: run the extractor with the project's Python version, e.g.
-# uv run --python 3.13 --no-project python <skill>/scripts/extract-python/extract.py --root . --out /tmp/<app>-model.json
-# With an Infrastructure tab, also:
-# python3 <skill>/scripts/extract-terraform/extract.py --root <terraform dir> --out /tmp/<app>-infra.json
-python3 <skill>/scripts/dependencies.py --root . --lang <go|python|ts> --out /tmp/<app>-dependencies.json
-node <skill>/scripts/build.mjs --dependencies /tmp/<app>-dependencies.json --model /tmp/<app>-model.json [--infra-model /tmp/<app>-infra.json] --content appedia/data/content.js --out appedia
+node <skill>/scripts/appedia.mjs --action prepare --repo . --lang <go|python|ts>
+# Include the original --src, --exclude, or --infra flags if creating a new baseline.
+# Edit appedia/data/content.js and resolve appedia/.maintenance/pending/impact.json as needed.
+# Collect current coverage in tests.json using the skill's testing guide.
+node <skill>/scripts/appedia.mjs --action rebuild --repo . --test-evidence <tests.json>
+node <skill>/scripts/appedia.mjs --action finalize --repo . --jsdom /tmp/appedia-smoke --test-evidence <tests.json> --require-coverage
 ```
 
 The build fails if `content.js` names a type, method or function that no
@@ -42,16 +39,14 @@ node <skill>/scripts/smoke.mjs --site appedia --jsdom /tmp/appedia-smoke
 node <skill>/scripts/screenshot.mjs --site appedia --out /tmp/<app>-shots   # needs Firefox or Chrome
 ```
 
-For a reviewed update with a saved baseline, run `prepare`, edit
-`data/content.js` and the pending impact dispositions, then run `rebuild` and
-`finalize --jsdom <dir>`. The accepted models and source hashes are kept in
-`.maintenance/`; a normal build does not move the baseline. To update only the
-renderer and page shell, use `appedia.mjs --action refresh-renderer`.
+A successful finalize stores the accepted source snapshot under `.maintenance/`.
+When the snapshot and its coverage are current, use
+`appedia.mjs --action refresh-renderer` for a renderer-only update.
 
 ## Test assessments and evidence
 
-The Tests tab separates functional scenarios from package code coverage. Edit
-`tests` in `data/content.js`; collect sources/results separately and pass
-`--test-evidence <json>` when building. `data/test-evidence.json` retains collection
-provenance. Prefer project-owned E2E tests for captures; builds never run them.
+Author functional scenarios in `data/content.js` under `tests`. The Code coverage
+subtab shows the statement measurement from the current test run, and
+`data/test-evidence.json` retains its provenance. Prefer project-owned E2E tests
+for captures and collect those separately from the build.
 Include `tests.js`, `tests.css` and recorded metadata when sharing the folder.

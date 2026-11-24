@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const args = Object.fromEntries(process.argv.slice(2).reduce((acc, a, i, all) => (a.startsWith("--") ? [...acc, [a.slice(2), all[i + 1]]] : acc), []));
-if (!args.site) { console.error("usage: node smoke.mjs --site <appedia dir> [--jsdom <dir where jsdom is installed>]"); process.exit(2); }
+if (!args.site) { console.error("usage: node smoke.mjs --site <appedia dir> [--jsdom <dir where jsdom is installed>] [--require-coverage]"); process.exit(2); }
 let jsdomPath = "jsdom";
 if (args.jsdom) jsdomPath = pathToFileURL(createRequire(join(args.jsdom, "package.json")).resolve("jsdom")).href;
 const { JSDOM, VirtualConsole } = await import(jsdomPath);
@@ -41,10 +41,30 @@ const dom = new JSDOM(html, {
 });
 const w = dom.window, d = w.document, M = w.APPEDIA_MODEL, C = w.APPEDIA_CONTENT, MI = w.APPEDIA_INFRA;
 if (!M || !C) { console.error("model.js or content.js did not load:\n" + errors.join("\n")); process.exit(1); }
+if ("require-coverage" in args) {
+  const coverage = M.testing?.coverage;
+  const head = coverage?.head;
+  const hasStatements = side => side?.packages.some(row => row.statements > 0);
+  if (!head?.eligible || head.result !== "passed" || !hasStatements(head)) {
+    console.error("Code coverage requires a passing head profile bound to the reviewed snapshot.");
+    process.exit(1);
+  }
+  if (w.APPEDIA_DIFF && (!coverage.comparable || !hasStatements(coverage.base))) {
+    console.error("Code coverage variation requires passing, comparable base and head profiles.");
+    process.exit(1);
+  }
+}
 const tick = () => new Promise(r => setTimeout(r, 2));
 const checks = {
   map: () => d.querySelectorAll("#stage .node").length ? null : "the map has no nodes",
-  pkg: () => d.querySelector("#panel h2") ? null : "no package panel",
+  pkg: route => {
+    if (!d.querySelector("#panel h2")) return "no package panel";
+    const pkg = route.startsWith("infra/") ? MI?.packages[route.slice(10)] : M.packages[route.slice(4)];
+    if (Object.values(pkg?.funcs || {}).some(fn => fn.name !== "init" || M.language !== "go")
+        && !d.querySelector('#stage g[aria-label^="function "]')) return "no free-function card";
+    return null;
+  },
+  filesystem: () => d.querySelector('#stage [data-kind="folder"]') ? null : "no filesystem root",
   type: () => d.querySelector("pre.src .ln") ? null : "no code shown",
   fn: () => d.querySelector("pre.src .ln") ? null : "no code shown",
   focus: () => {
@@ -64,7 +84,7 @@ const checks = {
 };
 checks.mapfocus = checks.focus;
 const D = w.APPEDIA_DIFF;
-const routes = D ? ["review", "map", "files", ...D.files.map(f => "file-" + f.path)] : ["map", "rules", "tasks", "ref"];
+const routes = D ? ["review", "map", "filesystem", "files", ...D.files.map(f => "file-" + f.path)] : ["map", "rules", "tasks", "ref"];
 routes.push("dependencies");
 routes.push("tests", "tests-coverage");
 for (const feature of M.testing?.features || []) { routes.push("tests-" + feature.id); for (const scenario of feature.scenarios) routes.push(`tests-${feature.id}/${scenario.id}`); }
@@ -77,7 +97,7 @@ for (const id of new Set([...Object.keys(M.packages), ...Object.keys(C.packages 
 let nTypes = 0, nFns = 0;
 for (const [pid, p] of Object.entries(M.packages)) {
   for (const t of Object.values(p.types)) { nTypes++; routes.push(`type-${pid}.${t.name}`, `focus-${pid}.${t.name}`, `focus-${pid}.${t.name}.2`); for (const m of (t.methods || []).slice(0, 3)) routes.push(`type-${pid}.${t.name}.${m}`); }
-  for (const f of Object.keys(p.funcs)) if (!f.startsWith("init")) { nFns++; routes.push(`fn-${pid}.${f}`); }
+  for (const f of Object.keys(p.funcs)) if (!f.startsWith("init@")) { nFns++; routes.push(`fn-${pid}.${f}`); }
 }
 for (const [id, f] of Object.entries(C.flows || {})) f.steps.forEach((_, i) => routes.push(`flow-${id}.${i}`));
 const mapNodes = Object.keys((C.map && C.map.nodes && Object.keys(C.map.nodes).length ? C.map.nodes : (M.autoMap || {}).nodes) || {});
@@ -93,15 +113,69 @@ if (MI) {
 async function visit(list, tag) {
   for (const r of list) {
     const before = errors.length;
-    w.location.hash = r;
+    w.location.hash = r.startsWith("file-") ? "file-" + encodeURIComponent(r.slice(5)) : r;
     await tick();
     const kind = r.replace(/^infra\//, "").split("-")[0];
-    const msg = checks[kind] && checks[kind]();
+    const msg = checks[kind] && checks[kind](r);
     if (msg) errors.push(`#${r}${tag}: ${msg}`);
     if (errors.length > before && !msg) errors[errors.length - 1] = `#${r}${tag}: ` + errors[errors.length - 1];
   }
 }
 await visit(routes, "");
+await visit(["map"], "");
+if (!d.querySelector("#mode-explore .explore.wide")) errors.push("#map: code map is not full width");
+d.querySelector('[data-map="filesystem"]')?.click();
+await tick();
+const expand = node => node.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Enter" }));
+if (!d.querySelector('[data-map="filesystem"][aria-current="page"]') || !d.querySelector("#mode-explore .explore.wide")) {
+  errors.push("#filesystem: the map switch did not open a full-width filesystem");
+}
+const folder = d.querySelector('#stage [data-kind="folder"][aria-expanded="false"]');
+if (folder) {
+  const path = folder.dataset.path;
+  expand(folder);
+  const isOpen = () => [...d.querySelectorAll('#stage [aria-expanded="true"]')].some(node => node.dataset.path === path);
+  if (!isOpen()) errors.push("#filesystem: folder did not expand");
+  d.querySelector('[data-map="map"]').click();
+  await tick();
+  d.querySelector('[data-map="filesystem"]').click();
+  await tick();
+  if (!isOpen()) errors.push("#filesystem: folder expansion lost on map switch");
+}
+
+if (D?.files.length) {
+  const file = D.files[0];
+  const findPath = (path, kind) => [...d.querySelectorAll(`#stage [data-kind="${kind}"]`)].find(node => node.dataset.path === path);
+  for (const [target, possibleRename] of [[file.path, false], ...D.files.filter(f =>
+    f.old && f.old.slice(0, f.old.lastIndexOf("/")) !== f.path.slice(0, f.path.lastIndexOf("/"))).slice(0, 1).map(f => [f.old, true])]) {
+    const parts = target.split("/");
+    for (let i = 1; i < parts.length; i++) {
+      const parent = findPath(parts.slice(0, i).join("/"), "folder");
+      if (parent?.getAttribute("aria-expanded") === "false") expand(parent);
+    }
+    const node = findPath(target, "file");
+    if (!node) { errors.push("#filesystem: missing file node " + target); continue; }
+    expand(node);
+    await tick();
+    const destination = possibleRename ? D.files.find(f => f.old === target).path : target;
+    if (!d.getElementById("fd-" + destination) || !d.querySelector('#mode-files.on [aria-current="true"]')) {
+      errors.push("#filesystem: file did not open its diff " + target);
+    }
+    w.location.hash = "filesystem";
+    await tick();
+  }
+}
+if (D) {
+  w.location.hash = "review";
+  await tick();
+  const details = d.querySelector("#mode-review article details");
+  if (!details || details.open) errors.push("#review: no collapsed explanation");
+  else {
+    details.querySelector("summary").click();
+    if (!details.open || !details.querySelector("div").textContent.trim()) errors.push("#review: explanation did not unfold");
+  }
+}
+
 let flowViews = 0, explainedSeen = 0;
 // appediff: every Diff/Before/After view of a flow with new or dropped steps, and the review's explanations
 if (D) {

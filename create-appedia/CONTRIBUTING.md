@@ -33,7 +33,7 @@ appedia/data/content.js (hand-written) ─┘        │                <out>/ar
 | `tests/fixtures/{go,python,ts}` | A tiny orders service per language. Fictional on purpose. |
 | `tests/content/{go,python,ts}.js` | Content for those fixtures. `go.js` fills every section and doubles as the worked example. |
 
-Routes (the URL hash, also the internal navigation API): `map`,
+Routes (the URL hash, also the internal navigation API): `presentation`, `map`, `filesystem`, `folder-<path>`, `file-<path>`,
 `mapfocus-<pkg>[.2]`, `pkg-<pkg>`, `focus-<pkg>.<Type>[.2]`,
 `type-<pkg>.<Type>[.<method>]`, `fn-<pkg>.<func>`, `flow-<id>[.<step>]`,
 `rules`, `rule-<n>`, `tasks`, `ref`. The explore routes prefixed with `infra/`
@@ -83,7 +83,7 @@ Each of these exists because breaking it broke something.
    both dark blocks (`prefers-color-scheme` and `[data-theme="dark"]`). SVG
    markers and fills use `var(--…)` too. Check light and dark after any
    visual change.
-9. **Layouts are computed before the page loads**, except the isolated view.
+9. **Layouts are computed before the page loads**, except isolated views and the visible filesystem tree, which reflows when a folder expands.
    Class diagrams come from Graphviz at build time; the isolated (focus) view
    is laid out in the browser by `egoLayout`, and the smoke test fails if any
    of its boxes overlap.
